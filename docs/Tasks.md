@@ -1,7 +1,7 @@
 <!-- filename: Tasks.md -->
 ---
 title: Tasks & Plan（経営戦略ダッシュボード）
-version: 0.1.2
+version: 0.1.3
 date: 2025-08-19
 owner: Development Team
 status: Active
@@ -21,8 +21,8 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 | #001 | リポジトリ初期化 | monorepo構成とdocs雛形 | Claude Assistant | ✅ Completed | High | - | repo, `docs/*` | 2025-08-18 | Given repo作成 When push Then CIが動作 | PRD/Rules | TBD | [2025-08-18 14:30](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-001---リポジトリ初期化) |
 | #002 | CI/PRゲート設定 | lint/unit/integration/e2e/build/coverage | Claude Assistant | ✅ Completed | High | #001 | GH Actions, Next.js基盤, テスト環境 | 2025-08-18 | Given PR When CI Then 6チェック通過 | Rules | TBD | [2025-08-18 15:00](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-002---ciprゲート設定) |
 | #003 | Supabase初期化 | Postgres DB/Auth/Storage/環境変数設定 | Claude Assistant | ✅ Completed | High | #001,#002 | Supabase proj, DB接続確認, Auth設定 | 2025-08-19 | Given .env.local設定 When `npm run db:migrate` Then 接続成功＋seed実行OK | PRD/Rules | TBD | [2025-08-19 14:00](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-003---supabase初期化) |
-| #004 | データベーススキーマ作成 | sales/dim_store/ext_**/audit_log テーブル設計・実装 | TBD | 🚧 Next | High | #003 | migration files, seed data | TBD | Given migration実行 When seed投入 Then 全テーブル作成＋基本データ確認 | PRD/Rules | TBD | |
-| #005 | 認証（メールマジックリンク） | Supabase Auth + Magic Link実装 | TBD | Todo | High | #003 | /auth pages, auth middleware | TBD | Given 登録メール When magic link Then ログイン成功＋セッション30分有効 | PRD/Rules | TBD | |
+| #004 | データベーススキーマ作成 | sales/dim_store/ext_**/audit_log テーブル設計・実装 | Claude Assistant | ✅ Completed | High | #003 | migration files, seed data, tests | 2025-08-19 | Given migration実行 When seed投入 Then 全テーブル作成＋基本データ確認 | PRD/Rules | TBD | [2025-08-19 16:45](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-004---データベーススキーマ作成) |
+| #005 | 認証（メールマジックリンク） | Supabase Auth + Magic Link実装 | TBD | 🚧 Next | High | #003,#004 | /auth pages, auth middleware | TBD | Given 登録メール When magic link Then ログイン成功＋セッション30分有効 | PRD/Rules | TBD | |
 | #006 | ダッシュボードUI（α版） | 外部指標・売上表示（静的モック→動的） | TBD | Todo | High | #004,#005 | /dashboard page, charts | TBD | Given 期間・店舗選択 When 表示 Then p95≤1500ms＋全指標レンダリング | PRD/ImageGen | TBD | |
 | #007 | 売上入力フォーム | 税抜入力・バリデーション・履歴・監査証跡 | TBD | Todo | High | #004,#005 | /sales page, form validation | TBD | Given 店舗担当 When 売上入力・保存 Then 即時集計反映＋audit_log記録 | PRD | TBD | |
 | #008 | ETLスケジューラ | 外部API取得（06/12/18/22 JST）・データ正規化 | TBD | Todo | High | #003,#004 | cron jobs, API integration | TBD | Given 定時 When バッチ実行 Then 10分以内にext_**テーブル更新完了 | PRD/Rules | TBD | |
@@ -41,20 +41,21 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 
 - **🏗️ Inception (完了済み)**: #001–#002 ✅ **完了** (2025-08-18)
   - リポジトリ・CI/CD基盤・Next.js環境構築
-- **🚀 Alpha**: #003–#012 🚧 **進行中** (3/10 完了)
+- **🚀 Alpha**: #003–#012 🚧 **進行中** (4/10 完了)
   - ✅ #003 Supabase初期化（2025-08-19 完了）
-  - **現在進行**: #004 データベーススキーマ作成
-  - **主要成果物**: 完全機能ダッシュボード・売上入力・ETL・通知
+  - ✅ #004 データベーススキーマ作成（2025-08-19 完了）
+  - **現在進行**: #005 認証（メールマジックリンク）実装
+  - **主要成果物**: 完全データベーススキーマ・認証基盤・包括的テスト・ヘルパー関数
 - **🔒 Beta**: #013–#015 (RBAC導入・性能最適化)
 - **📋 GA(Internal)**: #016, #IMG001–#IMG002 (文書・デザイン整備)
 
 # 次のアクション
 
-**即座に着手**: #004 データベーススキーマ作成
-- 詳細テーブル調整・制約設定強化
-- インデックス最適化
-- RLS（Row Level Security）準備作業
-- 詳細シードデータ拡充
+**即座に着手**: #005 認証（メールマジックリンク）実装
+- Supabase Auth Magic Link設定
+- 認証フロー・保護ルート実装
+- ユーザー登録・ログイン・ログアウト機能
+- セッション管理・ミドルウェア設定
 
 # リスク・課題
 
@@ -74,8 +75,8 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 
 **現在の状況**:
 - ✅ Inception完了 (2タスク完了)
-- 🚧 Alpha進行中 (9タスク残り) 
-- 📈 全体進度: 17% (3/18タスク)
+- 🚧 Alpha進行中 (8タスク残り) 
+- 📈 全体進度: 22% (4/18タスク)
 
 詳細な進捗ログ: [DEVELOPMENT_PROGRESS.md](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md)
 
