@@ -1,7 +1,7 @@
 <!-- filename: Tasks.md -->
 ---
 title: Tasks & Plan（経営戦略ダッシュボード）
-version: 0.1.1
+version: 0.1.2
 date: 2025-08-19
 owner: Development Team
 status: Active
@@ -20,8 +20,8 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | #001 | リポジトリ初期化 | monorepo構成とdocs雛形 | Claude Assistant | ✅ Completed | High | - | repo, `docs/*` | 2025-08-18 | Given repo作成 When push Then CIが動作 | PRD/Rules | TBD | [2025-08-18 14:30](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-001---リポジトリ初期化) |
 | #002 | CI/PRゲート設定 | lint/unit/integration/e2e/build/coverage | Claude Assistant | ✅ Completed | High | #001 | GH Actions, Next.js基盤, テスト環境 | 2025-08-18 | Given PR When CI Then 6チェック通過 | Rules | TBD | [2025-08-18 15:00](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-002---ciprゲート設定) |
-| #003 | Supabase初期化 | Postgres DB/Auth/Storage/環境変数設定 | TBD | 🚧 Next | High | #001,#002 | Supabase proj, DB接続確認, Auth設定 | TBD | Given .env.local設定 When `npm run db:migrate` Then 接続成功＋seed実行OK | PRD/Rules | TBD | |
-| #004 | データベーススキーマ作成 | sales/dim_store/ext_**/audit_log テーブル設計・実装 | TBD | Todo | High | #003 | migration files, seed data | TBD | Given migration実行 When seed投入 Then 全テーブル作成＋基本データ確認 | PRD/Rules | TBD | |
+| #003 | Supabase初期化 | Postgres DB/Auth/Storage/環境変数設定 | Claude Assistant | ✅ Completed | High | #001,#002 | Supabase proj, DB接続確認, Auth設定 | 2025-08-19 | Given .env.local設定 When `npm run db:migrate` Then 接続成功＋seed実行OK | PRD/Rules | TBD | [2025-08-19 14:00](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-003---supabase初期化) |
+| #004 | データベーススキーマ作成 | sales/dim_store/ext_**/audit_log テーブル設計・実装 | TBD | 🚧 Next | High | #003 | migration files, seed data | TBD | Given migration実行 When seed投入 Then 全テーブル作成＋基本データ確認 | PRD/Rules | TBD | |
 | #005 | 認証（メールマジックリンク） | Supabase Auth + Magic Link実装 | TBD | Todo | High | #003 | /auth pages, auth middleware | TBD | Given 登録メール When magic link Then ログイン成功＋セッション30分有効 | PRD/Rules | TBD | |
 | #006 | ダッシュボードUI（α版） | 外部指標・売上表示（静的モック→動的） | TBD | Todo | High | #004,#005 | /dashboard page, charts | TBD | Given 期間・店舗選択 When 表示 Then p95≤1500ms＋全指標レンダリング | PRD/ImageGen | TBD | |
 | #007 | 売上入力フォーム | 税抜入力・バリデーション・履歴・監査証跡 | TBD | Todo | High | #004,#005 | /sales page, form validation | TBD | Given 店舗担当 When 売上入力・保存 Then 即時集計反映＋audit_log記録 | PRD | TBD | |
@@ -41,20 +41,20 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 
 - **🏗️ Inception (完了済み)**: #001–#002 ✅ **完了** (2025-08-18)
   - リポジトリ・CI/CD基盤・Next.js環境構築
-- **🚀 Alpha**: #003–#012 完了 (フル機能・権限制御なし)
-  - **現在進行**: #003 Supabase初期化
+- **🚀 Alpha**: #003–#012 🚧 **進行中** (3/10 完了)
+  - ✅ #003 Supabase初期化（2025-08-19 完了）
+  - **現在進行**: #004 データベーススキーマ作成
   - **主要成果物**: 完全機能ダッシュボード・売上入力・ETL・通知
-- **🔒 Beta**: #013–#015 完了 (RBAC導入・性能最適化)
-- **📋 GA(Internal)**: #016, #IMG001–#IMG002 完了 (文書・デザイン整備)
+- **🔒 Beta**: #013–#015 (RBAC導入・性能最適化)
+- **📋 GA(Internal)**: #016, #IMG001–#IMG002 (文書・デザイン整備)
 
 # 次のアクション
 
-**即座に着手**: #003 Supabase初期化
-- Supabaseプロジェクト作成
-- PostgreSQL設定・接続確認
-- Auth設定（Magic Link）
-- Storage設定
-- 環境変数設定（.env.local）
+**即座に着手**: #004 データベーススキーマ作成
+- 詳細テーブル調整・制約設定強化
+- インデックス最適化
+- RLS（Row Level Security）準備作業
+- 詳細シードデータ拡充
 
 # リスク・課題
 
@@ -74,8 +74,8 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 
 **現在の状況**:
 - ✅ Inception完了 (2タスク完了)
-- 🚧 Alpha進行中 (10タスク残り)
-- 📈 全体進度: 11% (2/18タスク)
+- 🚧 Alpha進行中 (9タスク残り) 
+- 📈 全体進度: 17% (3/18タスク)
 
 詳細な進捗ログ: [DEVELOPMENT_PROGRESS.md](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md)
 
