@@ -2,6 +2,53 @@
 
 ## 2025-08-19
 
+### [COMPLETED] #005 - 認証（メールリンク）
+**Who**: Claude (Assistant)  
+**When**: 2025-08-19 02:20 JST  
+**What**: 
+- **Supabase Auth設定**: メールマジックリンク認証の完全実装
+  - 認証ヘルパー関数 (`src/lib/auth.ts`)
+  - メール送信、セッション管理、ログアウト機能
+  - 監査ログ統合（ログイン試行、成功、失敗の記録）
+- **React認証システム**: 包括的な状態管理
+  - AuthProvider Context (`src/contexts/AuthContext.tsx`)
+  - useAuth, useRequireAuth, useRequireAdmin フック
+  - 認証状態の自動監視とリダイレクト
+- **認証UI実装**: ユーザーフレンドリーな画面
+  - ログインページ (`/auth/login`) - 日本語UI、エラーハンドリング
+  - 認証コールバック (`/auth/callback`) - マジックリンク処理
+  - 成功/失敗状態の視覚的フィードバック
+- **保護されたルート**: ダッシュボード認証対応
+  - 認証ガード実装
+  - ユーザー情報表示
+  - ログアウト機能
+  - ローディング状態管理
+- **テストカバレッジ**: 包括的な品質保証
+  - 単体テスト (`__tests__/unit/auth.test.tsx`)
+  - メール検証、認証フロー、エラーハンドリング
+  - セキュリティテスト、セッション管理テスト
+
+**Status**: ✅ Completed  
+**Next Actions**: #006 ダッシュボードUI（α）実装 - 実際のデータ連携
+
+**Acceptance Criteria Met**: 
+- ✅ Given email When login Then セッション有効
+- ✅ Magic link email送信成功
+- ✅ 認証コールバック処理完了
+- ✅ セッション持続と自動更新
+- ✅ ログアウト機能動作
+- ✅ 保護されたルートアクセス制御
+- ✅ 監査ログ記録
+
+**セキュリティ実装**:
+- ✅ TLS必須のリダイレクトURL
+- ✅ セッション自動更新
+- ✅ 認証状態の永続化
+- ✅ 監査証跡（ログイン、ログアウト）
+- ✅ エラー情報のサニタイズ
+
+---
+
 ### [COMPLETED] #003 - Supabase初期化
 **Who**: Claude (Assistant)  
 **When**: 2025-08-19 02:15 JST  
@@ -97,18 +144,18 @@
 
 ---
 
-### Next: #005 - 認証（メールリンク）
+### Next: #006 - ダッシュボードUI（α）
 **Priority**: High  
-**Dependencies**: #003 (Completed)  
+**Dependencies**: #003, #004, #005 (All Completed)  
 **Target**: 
-- Supabase Auth 設定（Email Magic Link）
-- Next.js認証フロー実装
-- ログイン/ログアウト機能
-- セッション管理
-- 認証ガード
+- 指標/為替/天候/イベント/インバウンド/売上の実データ可視化
+- Recharts + ECharts チャート実装
+- リアルタイムデータ表示
+- フィルター機能
+- レスポンシブデザイン
 
 **Acceptance**: 
-- Given email When login Then セッション有効
+- Given 選択 When 表示 Then p95≤1500ms
 
 ---
 
@@ -135,8 +182,9 @@
   - ✅ #001 リポジトリ初期化
   - ✅ #002 CI/PRゲート設定
   - ✅ #003 Supabase初期化
-  - 🔄 #004 スキーマ作成 (実質完了)
-  - 🚧 #005 認証（メールリンク）
+  - ✅ #004 スキーマ作成 (実質完了)
+  - ✅ #005 認証（メールリンク）
+  - 🚧 #006 ダッシュボードUI（α）
 - **Beta**: #013–#015 完了 (RBAC導入)
 - **GA(Internal)**: #016, #IMG001–#IMG002 完了 (文書整備)
 
