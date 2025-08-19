@@ -97,40 +97,12 @@ export const authServer = {
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 /**
- * Hook for managing authentication state (client-side only)
+ * Authentication state type
  */
-export const useAuthState = () => {
-  if (typeof window === 'undefined') {
-    throw new Error('useAuthState can only be used on the client side')
-  }
-
-  const [user, setUser] = React.useState<User | null>(null)
-  const [status, setStatus] = React.useState<AuthStatus>('loading')
-
-  React.useEffect(() => {
-    // Get initial session
-    authClient.getCurrentUser().then((initialUser) => {
-      setUser(initialUser)
-      setStatus(initialUser ? 'authenticated' : 'unauthenticated')
-    })
-
-    // Listen for auth changes
-    const unsubscribe = authClient.onAuthStateChange((user) => {
-      setUser(user)
-      setStatus(user ? 'authenticated' : 'unauthenticated')
-    })
-
-    return unsubscribe
-  }, [])
-
-  return {
-    user,
-    status,
-    isLoading: status === 'loading',
-    isAuthenticated: status === 'authenticated',
-    signOut: authClient.signOut,
-  }
+export interface AuthState {
+  user: User | null
+  status: AuthStatus
+  isLoading: boolean
+  isAuthenticated: boolean
+  signOut: () => Promise<void>
 }
-
-// Add React import for the hook
-const React = typeof window !== 'undefined' ? require('react') : null
