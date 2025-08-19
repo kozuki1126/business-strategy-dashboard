@@ -4,12 +4,42 @@ import { useState, useEffect } from 'react'
 import { authClient } from '@/lib/auth'
 import { Button } from '@/components/ui/Button'
 import { User } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
+import { 
+  getSalesData, 
+  getMarketData, 
+  getFXRates, 
+  getWeatherData,
+  getAllStores,
+  getAnalyticsData,
+  logAuditEvent
+} from '@/lib/database/helpers'
+import { DashboardFilters, SalesWithCalculated, AnalyticsData } from '@/types/database.types'
+import { SalesChart } from '@/components/dashboard/SalesChart'
+import { ExternalIndicators } from '@/components/dashboard/ExternalIndicators'
+import { KPICards } from '@/components/dashboard/KPICards'
+import { DashboardFilters as FilterComponent } from '@/components/dashboard/DashboardFilters'
+import { format, subDays, startOfMonth, endOfMonth } from 'date-fns'
 
 export default function DashboardPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState('current-month')
-  const [selectedStore, setSelectedStore] = useState('all')
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
+  const [stores, setStores] = useState<any[]>([])
+  const [error, setError] = useState<string | null>(null)
+  
+  // Default filters - current month, all stores
+  const [filters, setFilters] = useState<DashboardFilters>({
+    dateRange: {
+      start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+      end: format(endOfMonth(new Date()), 'yyyy-MM-dd')
+    },
+    storeIds: undefined,
+    departments: undefined,
+    productCategories: undefined
+  })
+
+  const supabase = createClient()
 
   useEffect(() => {
     // Get current user
@@ -27,20 +57,107 @@ export default function DashboardPage() {
     return unsubscribe
   }, [])
 
+  useEffect(() => {
+    if (user) {
+      // Log dashboard view
+      logAuditEvent(
+        supabase,
+        'view_dashboard',
+        'dashboard_main',
+        { filters },
+        user.id
+      )
+      
+      loadInitialData()
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (user) {
+      loadAnalyticsData()
+    }
+  }, [filters, user])
+
+  const loadInitialData = async () => {
+    try {
+      const [storesData] = await Promise.all([
+        getAllStores(supabase)
+      ])
+      
+      setStores(storesData)
+    } catch (error) {
+      console.error('Failed to load initial data:', error)
+      setError('初期データの読み込みに失敗しました')
+    }
+  }
+
+  const loadAnalyticsData = async () => {
+    if (!user) return
+    
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const startTime = performance.now()
+      
+      // Load analytics data with current filters
+      const data = await getAnalyticsData(supabase, filters)
+      setAnalyticsData(data)
+      
+      const endTime = performance.now()
+      const responseTime = endTime - startTime
+      
+      // Log performance metrics
+      console.log(`Dashboard data loaded in ${responseTime.toFixed(2)}ms`)
+      
+      // Performance warning if over 1500ms (p95 target)
+      if (responseTime > 1500) {
+        console.warn(`Dashboard performance below target: ${responseTime.toFixed(2)}ms > 1500ms`)
+      }
+      
+    } catch (error) {
+      console.error('Failed to load analytics data:', error)
+      setError('データの読み込みに失敗しました')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSignOut = async () => {
     try {
+      if (user) {
+        await logAuditEvent(supabase, 'logout', 'dashboard', null, user.id)
+      }
       await authClient.signOut()
     } catch (error) {
       console.error('Sign out error:', error)
     }
   }
 
-  if (loading) {
+  const handleFiltersChange = (newFilters: DashboardFilters) => {
+    setFilters(newFilters)
+  }
+
+  if (loading && !analyticsData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">ダッシュボードを読み込み中...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-xl mb-4">⚠️</div>
+          <p className="text-gray-700 mb-4">{error}</p>
+          <Button onClick={() => loadAnalyticsData()} variant="outline">
+            再読み込み
+          </Button>
         </div>
       </div>
     )
@@ -98,100 +215,57 @@ export default function DashboardPage() {
               <p className="text-sm text-green-700">
                 認証済み - セッション有効時間: 30分
               </p>
+              {loading && (
+                <div className="ml-auto flex items-center text-sm text-green-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600 mr-2"></div>
+                  データ更新中...
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Filters */}
-        <div className="mb-6 flex gap-4">
-          <div>
-            <label
-              htmlFor="period"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              期間
-            </label>
-            <select
-              id="period"
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="input"
-            >
-              <option value="current-month">当月</option>
-              <option value="last-month">前月</option>
-              <option value="current-year">当年</option>
-            </select>
-          </div>
+        {/* Dashboard Filters */}
+        <FilterComponent
+          filters={filters}
+          stores={stores}
+          onFiltersChange={handleFiltersChange}
+          disabled={loading}
+        />
 
-          <div>
-            <label
-              htmlFor="store"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              店舗
-            </label>
-            <select
-              id="store"
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              className="input"
-            >
-              <option value="all">全店舗</option>
-              <option value="store-1">店舗1</option>
-              <option value="store-2">店舗2</option>
-            </select>
-          </div>
-        </div>
+        {analyticsData && (
+          <>
+            {/* KPI Cards */}
+            <KPICards 
+              salesData={analyticsData.sales}
+              loading={loading}
+            />
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="card">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">
-              売上（税抜）
-            </h3>
-            <p className="text-2xl font-bold text-gray-900">¥12,345,678</p>
-            <p className="text-sm text-green-600">+5.2% vs 前月</p>
-          </div>
+            {/* Charts and External Indicators */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Sales Chart */}
+              <SalesChart 
+                salesData={analyticsData.sales}
+                loading={loading}
+              />
 
-          <div className="card">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">客数</h3>
-            <p className="text-2xl font-bold text-gray-900">8,742</p>
-            <p className="text-sm text-red-600">-2.1% vs 前月</p>
-          </div>
-
-          <div className="card">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">客単価</h3>
-            <p className="text-2xl font-bold text-gray-900">¥1,413</p>
-            <p className="text-sm text-green-600">+7.5% vs 前月</p>
-          </div>
-        </div>
-
-        {/* Charts Placeholder */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">売上推移</h3>
-            <div className="h-64 bg-gray-100 rounded flex items-center justify-center">
-              <p className="text-gray-500">グラフエリア（Recharts実装予定）</p>
+              {/* External Indicators */}
+              <ExternalIndicators
+                marketData={analyticsData.marketData}
+                weatherData={analyticsData.weatherData}
+                events={analyticsData.events}
+                loading={loading}
+              />
             </div>
-          </div>
+          </>
+        )}
 
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">外部指標</h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">USD/JPY</span>
-                <span className="font-medium">¥150.25</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">日経225</span>
-                <span className="font-medium">33,425.50</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">天候</span>
-                <span className="font-medium">☀️ 晴れ</span>
-              </div>
-            </div>
-          </div>
+        {/* Performance Note */}
+        <div className="mt-8 p-3 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm text-blue-700">
+            💡 パフォーマンス目標: 応答時間 p95 ≤ 1500ms | 
+            最終更新: {analyticsData ? new Date().toLocaleString('ja-JP') : '未取得'}
+          </p>
         </div>
       </main>
     </div>
