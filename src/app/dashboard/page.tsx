@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, Suspense, lazy } from 'react'
 import { authClient } from '@/lib/auth'
 import { Button } from '@/components/ui/Button'
+import { Navigation, QuickActions } from '@/components/navigation/Navigation'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { 
@@ -319,6 +320,9 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex items-center gap-4">
+              {/* Quick Actions */}
+              <QuickActions className="hidden sm:flex" />
+              
               {user && (
                 <div className="flex items-center gap-3">
                   <div className="text-sm">
@@ -336,6 +340,11 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+          
+          {/* Navigation */}
+          <div className="mt-4 border-t pt-4">
+            <Navigation />
           </div>
         </div>
       </header>
