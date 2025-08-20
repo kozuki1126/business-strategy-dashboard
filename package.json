@@ -74,7 +74,7 @@
     "msw": "^2.4.9",
     "husky": "^9.1.6",
     "lint-staged": "^15.2.10",
-    "@bundle-analyzer/webpack-plugin": "^0.8.1",
+    "@next/bundle-analyzer": "^15.0.0",
     "tsx": "^4.19.1"
   },
   "lint-staged": {
