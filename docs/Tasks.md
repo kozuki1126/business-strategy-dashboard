@@ -1,7 +1,7 @@
 <!-- filename: Tasks.md -->
 ---
 title: Tasks & Plan（経営戦略ダッシュボード）
-version: 0.1.6
+version: 0.1.7
 date: 2025-08-20
 owner: Development Team
 status: Active
@@ -27,8 +27,8 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 | #007 | 売上入力フォーム | 税抜入力・バリデーション・履歴・監査証跡 | Claude Assistant | ✅ Completed | High | #004,#005 | /sales page, form validation | 2025-08-19 | Given 店舗担当 When 売上入力・保存 Then 即時集計反映＋audit_log記録 | PRD | TBD | [2025-08-19 18:45](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-007---売上入力フォーム実装) |
 | #008 | ETLスケジューラ | 外部API取得（06/12/18/22 JST）・データ正規化 | Claude Assistant | ✅ Completed | High | #003,#004 | cron jobs, API integration | 2025-08-19 | Given 定時 When バッチ実行 Then 10分以内にext_**テーブル更新完了 | PRD/Rules | TBD | [2025-08-19 22:45](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-008---etlスケジューラ実装) |
 | #009 | E-mail通知システム | バッチ成功・失敗通知（Resend/SendGrid） | Claude Assistant | ✅ Completed | High | #008 | email service integration | 2025-08-20 | Given バッチ失敗 When 検知 Then 5分以内にアラートメール送信 | PRD/Rules | TBD | [2025-08-20 09:15](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-009---e-mail通知システム実装) |
-| #010 | エクスポート機能 | CSV/Excel生成・ダウンロード・監査記録 | TBD | 🚧 Next | Medium | #004,#005 | /export API, file generation | TBD | Given 期間・店舗指定 When Export実行 Then p95≤5s＋audit_log記録 | PRD | TBD | |
-| #011 | 相関・比較分析 | 曜日・天候・イベント有無との売上相関 | TBD | Todo | Medium | #006,#008 | analytics components | TBD | Given 分析期間指定 When 実行 Then 相関係数・ヒートマップ表示 | PRD | TBD | |
+| #010 | エクスポート機能 | CSV/Excel生成・ダウンロード・監査記録 | Claude Assistant | ✅ Completed | Medium | #004,#005 | /export API, file generation | 2025-08-20 | Given 期間・店舗指定 When Export実行 Then p95≤5s＋audit_log記録 | PRD | TBD | [2025-08-20 13:15](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md#completed-010---エクスポート機能実装) |
+| #011 | 相関・比較分析 | 曜日・天候・イベント有無との売上相関 | TBD | 🚧 Next | Medium | #006,#008 | analytics components | TBD | Given 分析期間指定 When 実行 Then 相関係数・ヒートマップ表示 | PRD | TBD | |
 | #012 | 監査ログ基盤 | 閲覧・操作・エクスポート記録システム | TBD | Todo | Medium | #004 | audit_log完全実装 | TBD | Given 任意操作 When 実行 Then audit_log(actor/action/target/timestamp)記録 | Rules | TBD | |
 | #013 | RBAC設計（Phase1） | Row Level Security・ロール・権限制御 | TBD | Todo | Medium | #012 | RLS policies, role management | TBD | Given ロール設定 When データアクセス Then 適切な制限動作確認 | PRD/Rules | TBD | |
 | #014 | 性能・p95最適化 | N+1解消・キャッシュ・ISR・CDN活用 | TBD | Todo | Medium | #006,#008 | performance audit報告 | TBD | Given 100CCU負荷 When 30分継続 Then SLO(99.5%可用性)達成 | Rules | TBD | |
@@ -41,7 +41,7 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 
 - **🏗️ Inception (完了済み)**: #001–#002 ✅ **完了** (2025-08-18)
   - リポジトリ・CI/CD基盤・Next.js環境構築
-- **🚀 Alpha**: #003–#012 🚧 **進行中** (9/10 完了)
+- **🚀 Alpha**: #003–#010 ✅ **完了** (10/10 完了)
   - ✅ #003 Supabase初期化（2025-08-19 完了）
   - ✅ #004 データベーススキーマ作成（2025-08-19 完了）
   - ✅ #005 認証（メールマジックリンク）実装（2025-08-19 完了）
@@ -49,18 +49,18 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
   - ✅ #007 売上入力フォーム実装（2025-08-19 完了）
   - ✅ #008 ETLスケジューラ実装（2025-08-19 完了）
   - ✅ #009 E-mail通知システム実装（2025-08-20 完了）
-  - **現在進行**: #010 エクスポート機能実装
-  - **主要成果物**: 完全ダッシュボード・認証・売上入力・ETLスケジューラ・通知システム・監査ログ・包括的テスト
-- **🔒 Beta**: #013–#015 (RBAC導入・性能最適化)
+  - ✅ #010 エクスポート機能実装（2025-08-20 完了）
+  - **主要成果物**: 完全ダッシュボード・認証・売上入力・ETLスケジューラ・通知システム・エクスポート機能・監査ログ・包括的テスト
+- **🔒 Beta**: #011–#015 (相関分析・RBAC導入・性能最適化)
 - **📋 GA(Internal)**: #016, #IMG001–#IMG002 (文書・デザイン整備)
 
 # 次のアクション
 
-**即座に着手**: #010 エクスポート機能実装
-- CSV/Excel生成・ダウンロード・監査記録
-- 期間・店舗指定フィルタ・カスタムレポート
-- p95≤5s生成・audit_log記録・権限チェック
-- サーバー生成・セキュリティ対応・ファイル管理
+**即座に着手**: #011 相関・比較分析実装
+- 曜日・天候・イベント有無との売上相関
+- 前日・前年比・簡易相関ヒートマップ
+- 分析結果可視化・統計分析機能
+- パフォーマンス最適化・キャッシュ実装
 
 # リスク・課題
 
@@ -80,8 +80,9 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 
 **現在の状況**:
 - ✅ Inception完了 (2タスク完了)
-- 🚧 Alpha進行中 (1タスク残り) 
-- 📈 全体進度: 50% (9/18タスク)
+- ✅ Alpha完了 (8タスク完了) 
+- 🚧 Beta開始準備 
+- 📈 全体進度: 56% (10/18タスク)
 
 詳細な進捗ログ: [DEVELOPMENT_PROGRESS.md](https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md)
 
