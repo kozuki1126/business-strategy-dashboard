@@ -1,0 +1,189 @@
+{
+  "name": "経営戦略ダッシュボード",
+  "short_name": "Dashboard",
+  "description": "株価・為替・天候・売上データを統合した経営戦略ダッシュボード",
+  "version": "1.2.0",
+  "scope": "/",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#1f2937",
+  "background_color": "#ffffff",
+  
+  "categories": ["business", "analytics", "productivity"],
+  "lang": "ja",
+  
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  
+  "shortcuts": [
+    {
+      "name": "ダッシュボード",
+      "short_name": "Dashboard",
+      "description": "メインダッシュボードを表示",
+      "url": "/dashboard",
+      "icons": [
+        {
+          "src": "/icons/shortcut-dashboard.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "売上入力",
+      "short_name": "Sales",
+      "description": "売上データを入力",
+      "url": "/sales",
+      "icons": [
+        {
+          "src": "/icons/shortcut-sales.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "分析",
+      "short_name": "Analytics",
+      "description": "相関分析・比較分析",
+      "url": "/analytics",
+      "icons": [
+        {
+          "src": "/icons/shortcut-analytics.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "エクスポート",
+      "short_name": "Export",
+      "description": "データエクスポート",
+      "url": "/export",
+      "icons": [
+        {
+          "src": "/icons/shortcut-export.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  
+  "screenshots": [
+    {
+      "src": "/screenshots/dashboard-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "メインダッシュボード - デスクトップビュー"
+    },
+    {
+      "src": "/screenshots/dashboard-narrow.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "メインダッシュボード - モバイルビュー"
+    },
+    {
+      "src": "/screenshots/analytics-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "分析画面 - デスクトップビュー"
+    }
+  ],
+  
+  "prefer_related_applications": false,
+  
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": ["text/csv", ".csv", "application/vnd.ms-excel", ".xlsx"]
+        }
+      ]
+    }
+  },
+  
+  "protocol_handlers": [
+    {
+      "protocol": "web+dashboard",
+      "url": "/dashboard?data=%s"
+    }
+  ],
+  
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  
+  "handle_links": "preferred",
+  
+  "display_override": ["window-controls-overlay", "minimal-ui", "standalone", "browser"],
+  
+  "id": "business-strategy-dashboard",
+  
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://business-strategy-dashboard.vercel.app/manifest.json",
+      "id": "business-strategy-dashboard"
+    }
+  ]
+}
