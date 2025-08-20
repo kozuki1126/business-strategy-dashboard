@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, Suspense, lazy } from 'react'
-import { authClient } from '@/lib/auth'
+import { authClient } from '@/lib/auth-client' // ← クライアント専用のインポートに修正
 import { Button } from '@/components/ui/Button'
 import { Navigation, QuickActions } from '@/components/navigation/Navigation'
 import { User } from '@supabase/supabase-js'
