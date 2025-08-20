@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Next.js 15.5.0 高度最適化設定
+  // Next.js 15.5.0 最適化設定
   experimental: {
     optimizePackageImports: ['recharts', 'lucide-react', '@supabase/supabase-js'],
     bundlePagesRouterDependencies: true, // Page Router dependency optimization
@@ -30,6 +30,9 @@ const nextConfig = {
       },
     }
   },
+  
+  // React設定
+  reactStrictMode: true,
   
   // PWA準備 - Service Worker設定
   async rewrites() {
@@ -278,7 +281,6 @@ const nextConfig = {
   
   // Production optimizations
   ...(process.env.NODE_ENV === 'production' && {
-    swcMinify: true,
     cleanDistDir: true,
     
     // Disable development features
