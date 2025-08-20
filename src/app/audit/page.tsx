@@ -12,7 +12,7 @@
 
 import { Suspense } from 'react'
 import { AuditLogsContainer } from '@/components/audit/AuditLogsContainer'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser } from '@/lib/auth-server'
 import { AuditService } from '@/lib/services/audit'
 import { redirect } from 'next/navigation'
 
