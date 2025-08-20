@@ -202,10 +202,10 @@ export function AuditLogsContainer() {
   }, [searchParams.startDate, searchParams.endDate])
   
   return (
-    <div className=\"space-y-6\">
+    <div className="space-y-6">
       {/* タブナビゲーション */}
-      <div className=\"border-b border-gray-200\">
-        <nav className=\"-mb-px flex space-x-8\">
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
           {[
             { key: 'logs', label: '監査ログ', icon: '📋' },
             { key: 'metrics', label: 'メトリクス', icon: '📊' },
@@ -220,7 +220,7 @@ export function AuditLogsContainer() {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              <span className=\"mr-2\">{tab.icon}</span>
+              <span className="mr-2">{tab.icon}</span>
               {tab.label}
             </button>
           ))}
@@ -237,22 +237,22 @@ export function AuditLogsContainer() {
       />
       
       {/* リフレッシュ設定 */}
-      <div className=\"flex items-center justify-between bg-gray-50 p-4 rounded-lg\">
-        <div className=\"flex items-center space-x-4\">
-          <span className=\"text-sm text-gray-600\">自動リフレッシュ:</span>
+      <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+        <div className="flex items-center space-x-4">
+          <span className="text-sm text-gray-600">自動リフレッシュ:</span>
           <select
             value={refreshInterval || ''}
             onChange={(e) => setRefreshInterval(e.target.value ? parseInt(e.target.value) : null)}
-            className=\"text-sm border-gray-300 rounded-md\"
+            className="text-sm border-gray-300 rounded-md"
           >
-            <option value=\"\">無効</option>
-            <option value=\"30\">30秒</option>
-            <option value=\"60\">1分</option>
-            <option value=\"300\">5分</option>
+            <option value="">無効</option>
+            <option value="30">30秒</option>
+            <option value="60">1分</option>
+            <option value="300">5分</option>
           </select>
         </div>
         
-        <div className=\"flex items-center space-x-2 text-sm text-gray-600\">
+        <div className="flex items-center space-x-2 text-sm text-gray-600">
           {executionTime && (
             <span>検索時間: {executionTime}ms</span>
           )}
@@ -262,20 +262,20 @@ export function AuditLogsContainer() {
               refetchMetrics()
               refetchSecurity()
             }}
-            className=\"flex items-center px-2 py-1 text-blue-600 hover:text-blue-800\"
+            className="flex items-center px-2 py-1 text-blue-600 hover:text-blue-800"
             disabled={logsLoading}
           >
             <svg
               className={`w-4 h-4 mr-1 ${logsLoading ? 'animate-spin' : ''}`}
-              fill=\"none\"
-              stroke=\"currentColor\"
-              viewBox=\"0 0 24 24\"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
               <path
-                strokeLinecap=\"round\"
-                strokeLinejoin=\"round\"
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 strokeWidth={2}
-                d=\"M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15\"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
             更新
@@ -285,7 +285,7 @@ export function AuditLogsContainer() {
       
       {/* タブコンテンツ */}
       {selectedTab === 'logs' && (
-        <div className=\"space-y-6\">
+        <div className="space-y-6">
           {/* メトリクスカード */}
           <AuditMetricsCards
             metrics={metrics}
