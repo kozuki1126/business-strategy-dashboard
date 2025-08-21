@@ -1,6 +1,7 @@
 // Enhanced Database Types for Business Strategy Dashboard
 // Task #004: データベーススキーマ作成 - TypeScript型定義更新
 // Generated: 2025-08-19
+// Updated: 2025-08-22 - TypeScript型定義エラー修正
 
 export interface Database {
   public: {
@@ -408,7 +409,8 @@ export interface Database {
 // ========================================
 
 // Sales data with calculated fields
-export interface SalesWithCalculated extends Database['public']['Tables']['sales']['Row'] {
+// TypeScript型定義エラー修正: interfaceからtype aliasへ変更
+export type SalesWithCalculated = Database['public']['Tables']['sales']['Row'] & {
   total_revenue?: number // revenue_ex_tax + tax
   average_transaction_value?: number // revenue_ex_tax / transactions
   conversion_rate?: number // transactions / footfall
