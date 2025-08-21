@@ -220,11 +220,9 @@ const nextConfig = {
           },
         },
         
-        // Minimize configuration - use updated Terser path
+        // Use Next.js 15 default minimization - no custom minimizer
         minimize: true,
-        minimizer: [
-          '...',
-        ],
+        // Remove custom minimizer configuration to avoid path issues
       }
       
       // Memory leak prevention
