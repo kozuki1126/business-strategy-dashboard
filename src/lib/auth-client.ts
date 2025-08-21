@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
-import { User } from '@supabase/supabase-js'
+import type { User } from '@supabase/supabase-js'
 
 /**
  * Client-side authentication helper functions
@@ -64,18 +64,4 @@ export const authClient = {
   },
 }
 
-/**
- * Authentication status type
- */
-export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
-
-/**
- * Authentication state type
- */
-export interface AuthState {
-  user: User | null
-  status: AuthStatus
-  isLoading: boolean
-  isAuthenticated: boolean
-  signOut: () => Promise<void>
-}
+export default authClient
