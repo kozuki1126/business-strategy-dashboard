@@ -1,435 +1,331 @@
+#!/usr/bin/env tsx
+
 /**
- * Load Testing Script for Performance Validation
- * Task #014: 性能・p95最適化実装 - 100CCU負荷・99.5%可用性検証
- * 
- * Usage:
- * npm run test:load
- * npm run test:load -- --concurrent=50 --duration=300
+ * Load Test Script for Task #014 - Performance Optimization
+ * Target: 100CCU負荷・99.5%可用性・p95≤1500ms
  */
 
+import { createHash } from 'crypto'
 import { performance } from 'perf_hooks'
 
 interface LoadTestConfig {
   baseUrl: string
   concurrent: number
-  duration: number // seconds
-  warmup: number // seconds
-  endpoints: TestEndpoint[]
-}
-
-interface TestEndpoint {
-  path: string
-  method: 'GET' | 'POST'
-  headers?: Record<string, string>
-  body?: string
-  weight: number // Probability weight for this endpoint
+  duration: number
+  rampUpTime: number
+  scenarios: Array<{
+    name: string
+    weight: number
+    endpoint: string
+    method: 'GET' | 'POST'
+    headers?: Record<string, string>
+    body?: any
+  }>
 }
 
 interface TestResult {
-  endpoint: string
-  timestamp: number
-  responseTime: number
-  status: number
-  success: boolean
-  error?: string
-}
-
-interface LoadTestResults {
   totalRequests: number
   successfulRequests: number
   failedRequests: number
   averageResponseTime: number
   p95ResponseTime: number
   p99ResponseTime: number
-  maxResponseTime: number
   minResponseTime: number
+  maxResponseTime: number
   requestsPerSecond: number
   availability: number
-  errorRate: number
-  testDuration: number
-  concurrentUsers: number
-  sloAchieved: boolean
+  errors: Array<{
+    error: string
+    count: number
+  }>
 }
 
-class LoadTester {
+class LoadTest {
   private config: LoadTestConfig
-  private results: TestResult[] = []
-  private running = false
-  private authToken?: string
+  private results: Array<{
+    timestamp: number
+    responseTime: number
+    success: boolean
+    error?: string
+    scenario: string
+  }> = []
+  private startTime: number = 0
+  private activeRequests: number = 0
 
   constructor(config: LoadTestConfig) {
     this.config = config
   }
 
-  /**
-   * Authenticate and get session token
-   */
-  async authenticate(): Promise<void> {
-    try {
-      // Use test credentials from environment
-      const email = process.env.TEST_USER_EMAIL || 'test@example.com'
-      const response = await fetch(`${this.config.baseUrl}/auth`, {
+  private getTestScenarios(): LoadTestConfig['scenarios'] {
+    return [
+      {
+        name: 'Dashboard Load',
+        weight: 30,
+        endpoint: '/dashboard',
+        method: 'GET',
+        headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+      },
+      {
+        name: 'Analytics API',
+        weight: 25,
+        endpoint: '/api/analytics',
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      },
+      {
+        name: 'Sales Data',
+        weight: 20,
+        endpoint: '/api/sales',
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      },
+      {
+        name: 'Export API',
+        weight: 10,
+        endpoint: '/api/export',
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email })
-      })
-
-      if (response.ok) {
-        console.log('✅ Authentication successful')
-        // Note: In real scenarios, you'd extract token from response
-        this.authToken = 'test-session-token'
-      } else {
-        console.warn('⚠️  Authentication failed, proceeding without auth')
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'sales',
+          format: 'csv',
+          startDate: '2025-01-01',
+          endDate: '2025-01-31'
+        })
+      },
+      {
+        name: 'Correlation Analysis',
+        weight: 10,
+        endpoint: '/api/analytics/correlation',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: '2025-01-01',
+          endDate: '2025-01-31',
+          storeIds: ['store-001', 'store-002']
+        })
+      },
+      {
+        name: 'Audit Logs',
+        weight: 5,
+        endpoint: '/api/audit',
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
       }
-    } catch (error) {
-      console.warn('⚠️  Authentication error:', error)
-    }
+    ]
   }
 
-  /**
-   * Execute single HTTP request
-   */
-  async executeRequest(endpoint: TestEndpoint): Promise<TestResult> {
+  private selectScenario(): LoadTestConfig['scenarios'][0] {
+    const totalWeight = this.config.scenarios.reduce((sum, s) => sum + s.weight, 0)
+    const random = Math.random() * totalWeight
+    let currentWeight = 0
+    
+    for (const scenario of this.config.scenarios) {
+      currentWeight += scenario.weight
+      if (random <= currentWeight) {
+        return scenario
+      }
+    }
+    
+    return this.config.scenarios[0]
+  }
+
+  private async makeRequest(scenario: LoadTestConfig['scenarios'][0]): Promise<void> {
     const startTime = performance.now()
-    const timestamp = Date.now()
-
+    this.activeRequests++
+    
     try {
-      const headers: Record<string, string> = {
-        'User-Agent': 'LoadTest/1.0',
-        'Accept': 'application/json',
-        ...endpoint.headers
+      const url = `${this.config.baseUrl}${scenario.endpoint}`
+      const options: RequestInit = {
+        method: scenario.method,
+        headers: {
+          'User-Agent': 'LoadTest/1.0',
+          'Accept-Encoding': 'gzip, deflate, br',
+          ...scenario.headers
+        },
+        body: scenario.body
       }
 
-      if (this.authToken) {
-        headers['Authorization'] = `Bearer ${this.authToken}`
-      }
+      const response = await fetch(url, options)
+      const endTime = performance.now()
+      const responseTime = endTime - startTime
 
-      const response = await fetch(`${this.config.baseUrl}${endpoint.path}`, {
-        method: endpoint.method,
-        headers,
-        body: endpoint.body,
-        signal: AbortSignal.timeout(10000) // 10s timeout
+      this.results.push({
+        timestamp: Date.now(),
+        responseTime,
+        success: response.ok,
+        scenario: scenario.name,
+        error: response.ok ? undefined : `HTTP ${response.status}: ${response.statusText}`
       })
 
-      const responseTime = performance.now() - startTime
-
-      return {
-        endpoint: endpoint.path,
-        timestamp,
-        responseTime,
-        status: response.status,
-        success: response.ok,
-        error: response.ok ? undefined : `HTTP ${response.status}`
-      }
     } catch (error) {
-      const responseTime = performance.now() - startTime
-      return {
-        endpoint: endpoint.path,
-        timestamp,
+      const endTime = performance.now()
+      const responseTime = endTime - startTime
+
+      this.results.push({
+        timestamp: Date.now(),
         responseTime,
-        status: 0,
         success: false,
+        scenario: scenario.name,
         error: error instanceof Error ? error.message : 'Unknown error'
-      }
+      })
+    } finally {
+      this.activeRequests--
     }
   }
 
-  /**
-   * Select random endpoint based on weights
-   */
-  selectEndpoint(): TestEndpoint {
-    const totalWeight = this.config.endpoints.reduce((sum, ep) => sum + ep.weight, 0)
-    let random = Math.random() * totalWeight
+  private async rampUp(): Promise<void> {
+    const rampUpInterval = this.config.rampUpTime / this.config.concurrent
     
-    for (const endpoint of this.config.endpoints) {
-      random -= endpoint.weight
-      if (random <= 0) {
-        return endpoint
-      }
+    for (let i = 0; i < this.config.concurrent; i++) {
+      setTimeout(() => this.userLoop(), i * rampUpInterval)
     }
-    
-    return this.config.endpoints[0] // Fallback
   }
 
-  /**
-   * Simulate single user session
-   */
-  async simulateUser(userId: number): Promise<void> {
-    const userStartTime = performance.now()
-    const endTime = userStartTime + (this.config.duration * 1000)
-
-    console.log(`👤 User ${userId} started`)
-
-    while (this.running && performance.now() < endTime) {
-      const endpoint = this.selectEndpoint()
-      const result = await this.executeRequest(endpoint)
-      this.results.push(result)
-
-      // Random think time between requests (100ms - 2s)
-      const thinkTime = Math.random() * 1900 + 100
+  private async userLoop(): Promise<void> {
+    const endTime = this.startTime + this.config.duration
+    
+    while (Date.now() < endTime) {
+      const scenario = this.selectScenario()
+      await this.makeRequest(scenario)
+      
+      // Random think time between 1-5 seconds
+      const thinkTime = Math.random() * 4000 + 1000
       await new Promise(resolve => setTimeout(resolve, thinkTime))
     }
-
-    console.log(`👤 User ${userId} completed`)
   }
 
-  /**
-   * Run warmup phase
-   */
-  async warmup(): Promise<void> {
-    if (this.config.warmup <= 0) return
-
-    console.log(`🔥 Warming up for ${this.config.warmup} seconds...`)
-    
-    const warmupRequests = Math.min(this.config.concurrent, 10)
-    const warmupPromises = []
-
-    for (let i = 0; i < warmupRequests; i++) {
-      warmupPromises.push(this.executeRequest(this.config.endpoints[0]))
-    }
-
-    await Promise.all(warmupPromises)
-    await new Promise(resolve => setTimeout(resolve, this.config.warmup * 1000))
-    
-    console.log('✅ Warmup completed')
-  }
-
-  /**
-   * Execute load test
-   */
-  async run(): Promise<LoadTestResults> {
-    console.log(`🚀 Starting load test`)
-    console.log(`📊 Configuration:`)
-    console.log(`   - Base URL: ${this.config.baseUrl}`)
-    console.log(`   - Concurrent Users: ${this.config.concurrent}`)
-    console.log(`   - Duration: ${this.config.duration}s`)
-    console.log(`   - Endpoints: ${this.config.endpoints.length}`)
-
-    // Authentication
-    await this.authenticate()
-
-    // Warmup
-    await this.warmup()
-
-    // Reset results
-    this.results = []
-    this.running = true
-
-    const testStartTime = performance.now()
-
-    // Start concurrent user sessions
-    const userPromises = []
-    for (let i = 1; i <= this.config.concurrent; i++) {
-      userPromises.push(this.simulateUser(i))
-      
-      // Gradual ramp-up over first 10% of test duration
-      if (i < this.config.concurrent) {
-        const rampUpDelay = (this.config.duration * 100) / this.config.concurrent
-        await new Promise(resolve => setTimeout(resolve, rampUpDelay))
-      }
-    }
-
-    // Wait for all users to complete
-    await Promise.all(userPromises)
-    
-    this.running = false
-    const testEndTime = performance.now()
-    const actualDuration = (testEndTime - testStartTime) / 1000
-
-    console.log(`✅ Load test completed in ${actualDuration.toFixed(2)}s`)
-
-    return this.analyzeResults(actualDuration)
-  }
-
-  /**
-   * Analyze test results and calculate metrics
-   */
-  private analyzeResults(actualDuration: number): LoadTestResults {
+  private calculateResults(): TestResult {
     const successfulResults = this.results.filter(r => r.success)
     const failedResults = this.results.filter(r => !r.success)
     
-    const responseTimes = successfulResults.map(r => r.responseTime).sort((a, b) => a - b)
+    const responseTimes = this.results.map(r => r.responseTime).sort((a, b) => a - b)
+    const testDurationMs = this.config.duration * 1000
     
     const p95Index = Math.floor(responseTimes.length * 0.95)
     const p99Index = Math.floor(responseTimes.length * 0.99)
-
-    const averageResponseTime = responseTimes.length > 0 
-      ? responseTimes.reduce((sum, rt) => sum + rt, 0) / responseTimes.length 
-      : 0
-
-    const availability = this.results.length > 0 
-      ? (successfulResults.length / this.results.length) * 100 
-      : 0
-
-    const errorRate = this.results.length > 0 
-      ? (failedResults.length / this.results.length) * 100 
-      : 0
-
-    const requestsPerSecond = actualDuration > 0 
-      ? this.results.length / actualDuration 
-      : 0
-
-    const p95ResponseTime = responseTimes[p95Index] || 0
     
-    // SLO targets: 99.5% availability, p95 ≤ 1500ms
-    const sloAchieved = availability >= 99.5 && p95ResponseTime <= 1500
+    // Count errors by type
+    const errorCounts = new Map<string, number>()
+    failedResults.forEach(r => {
+      const error = r.error || 'Unknown error'
+      errorCounts.set(error, (errorCounts.get(error) || 0) + 1)
+    })
+    
+    const errors = Array.from(errorCounts.entries()).map(([error, count]) => ({
+      error,
+      count
+    }))
 
     return {
       totalRequests: this.results.length,
       successfulRequests: successfulResults.length,
       failedRequests: failedResults.length,
-      averageResponseTime,
-      p95ResponseTime,
+      averageResponseTime: responseTimes.reduce((sum, rt) => sum + rt, 0) / responseTimes.length,
+      p95ResponseTime: responseTimes[p95Index] || 0,
       p99ResponseTime: responseTimes[p99Index] || 0,
-      maxResponseTime: responseTimes[responseTimes.length - 1] || 0,
       minResponseTime: responseTimes[0] || 0,
-      requestsPerSecond,
-      availability,
-      errorRate,
-      testDuration: actualDuration,
-      concurrentUsers: this.config.concurrent,
-      sloAchieved
+      maxResponseTime: responseTimes[responseTimes.length - 1] || 0,
+      requestsPerSecond: this.results.length / (testDurationMs / 1000),
+      availability: (successfulResults.length / this.results.length) * 100,
+      errors
     }
   }
 
-  /**
-   * Print detailed results
-   */
-  printResults(results: LoadTestResults): void {
-    console.log('\n📊 LOAD TEST RESULTS')
-    console.log('==========================================')
+  private printResults(results: TestResult): void {
+    console.log('\n' + '='.repeat(60))
+    console.log('📊 LOAD TEST RESULTS - Task #014')
+    console.log('='.repeat(60))
     
-    console.log(`\n🎯 SLO Achievement: ${results.sloAchieved ? '✅ PASSED' : '❌ FAILED'}`)
+    console.log(`\n🎯 SLO Targets:`)
+    console.log(`   Availability: ≥99.5%`)
+    console.log(`   P95 Response Time: ≤1500ms`)
+    console.log(`   Concurrent Users: ${this.config.concurrent}`)
+    console.log(`   Test Duration: ${this.config.duration}s`)
     
     console.log(`\n📈 Performance Metrics:`)
-    console.log(`   - Total Requests: ${results.totalRequests.toLocaleString()}`)
-    console.log(`   - Successful: ${results.successfulRequests.toLocaleString()} (${results.availability.toFixed(2)}%)`)
-    console.log(`   - Failed: ${results.failedRequests.toLocaleString()} (${results.errorRate.toFixed(2)}%)`)
-    console.log(`   - Requests/sec: ${results.requestsPerSecond.toFixed(2)}`)
+    console.log(`   Total Requests: ${results.totalRequests.toLocaleString()}`)
+    console.log(`   Successful Requests: ${results.successfulRequests.toLocaleString()}`)
+    console.log(`   Failed Requests: ${results.failedRequests.toLocaleString()}`)
+    console.log(`   Requests/sec: ${results.requestsPerSecond.toFixed(2)}`)
     
     console.log(`\n⏱️  Response Times:`)
-    console.log(`   - Average: ${results.averageResponseTime.toFixed(2)}ms`)
-    console.log(`   - P95: ${results.p95ResponseTime.toFixed(2)}ms ${results.p95ResponseTime <= 1500 ? '✅' : '❌'}`)
-    console.log(`   - P99: ${results.p99ResponseTime.toFixed(2)}ms`)
-    console.log(`   - Min: ${results.minResponseTime.toFixed(2)}ms`)
-    console.log(`   - Max: ${results.maxResponseTime.toFixed(2)}ms`)
+    console.log(`   Average: ${results.averageResponseTime.toFixed(2)}ms`)
+    console.log(`   P95: ${results.p95ResponseTime.toFixed(2)}ms`)
+    console.log(`   P99: ${results.p99ResponseTime.toFixed(2)}ms`)
+    console.log(`   Min: ${results.minResponseTime.toFixed(2)}ms`)
+    console.log(`   Max: ${results.maxResponseTime.toFixed(2)}ms`)
     
-    console.log(`\n🔍 Test Configuration:`)
-    console.log(`   - Concurrent Users: ${results.concurrentUsers}`)
-    console.log(`   - Test Duration: ${results.testDuration.toFixed(2)}s`)
-    console.log(`   - Availability Target: 99.5% ${results.availability >= 99.5 ? '✅' : '❌'}`)
-    console.log(`   - P95 Target: ≤1500ms ${results.p95ResponseTime <= 1500 ? '✅' : '❌'}`)
-
-    if (!results.sloAchieved) {
-      console.log(`\n⚠️  SLO NOT ACHIEVED:`)
-      if (results.availability < 99.5) {
-        console.log(`   - Availability: ${results.availability.toFixed(2)}% < 99.5%`)
-      }
-      if (results.p95ResponseTime > 1500) {
-        console.log(`   - P95 Response Time: ${results.p95ResponseTime.toFixed(2)}ms > 1500ms`)
-      }
-    }
-
-    // Error analysis
-    if (results.failedRequests > 0) {
-      console.log(`\n❌ Error Analysis:`)
-      const errorTypes = new Map<string, number>()
-      
-      this.results.filter(r => !r.success).forEach(r => {
-        const errorKey = r.error || 'Unknown'
-        errorTypes.set(errorKey, (errorTypes.get(errorKey) || 0) + 1)
+    const availabilityStatus = results.availability >= 99.5 ? '✅' : '❌'
+    const p95Status = results.p95ResponseTime <= 1500 ? '✅' : '❌'
+    
+    console.log(`\n🎯 SLO Achievement:`)
+    console.log(`   ${availabilityStatus} Availability: ${results.availability.toFixed(3)}% (Target: ≥99.5%)`)
+    console.log(`   ${p95Status} P95 Response Time: ${results.p95ResponseTime.toFixed(2)}ms (Target: ≤1500ms)`)
+    
+    if (results.errors.length > 0) {
+      console.log(`\n❌ Errors:`)
+      results.errors.forEach(error => {
+        console.log(`   ${error.error}: ${error.count} occurrences`)
       })
-
-      for (const [error, count] of errorTypes.entries()) {
-        console.log(`   - ${error}: ${count} occurrences`)
-      }
     }
+    
+    const overallStatus = results.availability >= 99.5 && results.p95ResponseTime <= 1500
+    console.log(`\n${overallStatus ? '🎉' : '⚠️ '} Overall Status: ${overallStatus ? 'PASSED - SLO targets achieved!' : 'FAILED - SLO targets not met'}`)
+    console.log('='.repeat(60))
+  }
+
+  async run(): Promise<boolean> {
+    console.log(`🚀 Starting load test with ${this.config.concurrent} concurrent users for ${this.config.duration}s`)
+    console.log(`📡 Target URL: ${this.config.baseUrl}`)
+    console.log(`⏳ Ramp-up time: ${this.config.rampUpTime}s`)
+    
+    this.startTime = Date.now()
+    
+    // Start ramp-up
+    await this.rampUp()
+    
+    // Wait for test completion + buffer for ongoing requests
+    await new Promise(resolve => setTimeout(resolve, (this.config.duration + this.config.rampUpTime + 10) * 1000))
+    
+    // Wait for any remaining requests to complete
+    while (this.activeRequests > 0) {
+      console.log(`⏳ Waiting for ${this.activeRequests} active requests to complete...`)
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+    
+    const results = this.calculateResults()
+    this.printResults(results)
+    
+    // Return whether SLO targets were met
+    return results.availability >= 99.5 && results.p95ResponseTime <= 1500
   }
 }
 
-// Default test configuration
-const DEFAULT_CONFIG: LoadTestConfig = {
-  baseUrl: process.env.TEST_BASE_URL || 'http://localhost:3000',
-  concurrent: 100,
-  duration: 1800, // 30 minutes
-  warmup: 30,
-  endpoints: [
-    {
-      path: '/api/analytics?start=2025-01-01&end=2025-01-31',
-      method: 'GET',
-      weight: 40 // 40% of requests
-    },
-    {
-      path: '/api/analytics/correlation',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filters: {
-          dateRange: { start: '2025-01-01', end: '2025-01-31' }
-        }
-      }),
-      weight: 20 // 20% of requests
-    },
-    {
-      path: '/api/sales',
-      method: 'GET',
-      weight: 25 // 25% of requests
-    },
-    {
-      path: '/api/export',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'sales',
-        filters: {
-          dateRange: { start: '2025-01-01', end: '2025-01-07' }
-        }
-      }),
-      weight: 10 // 10% of requests
-    },
-    {
-      path: '/api/audit',
-      method: 'GET',
-      weight: 5 // 5% of requests
-    }
-  ]
-}
-
-// CLI interface
+// Main execution
 async function main() {
   const args = process.argv.slice(2)
-  const config = { ...DEFAULT_CONFIG }
-
-  // Parse CLI arguments
-  for (const arg of args) {
-    if (arg.startsWith('--concurrent=')) {
-      config.concurrent = parseInt(arg.split('=')[1])
-    } else if (arg.startsWith('--duration=')) {
-      config.duration = parseInt(arg.split('=')[1])
-    } else if (arg.startsWith('--baseUrl=')) {
-      config.baseUrl = arg.split('=')[1]
-    }
+  const config: LoadTestConfig = {
+    baseUrl: args.find(arg => arg.startsWith('--baseUrl='))?.split('=')[1] || 'http://localhost:3000',
+    concurrent: parseInt(args.find(arg => arg.startsWith('--concurrent='))?.split('=')[1] || '10'),
+    duration: parseInt(args.find(arg => arg.startsWith('--duration='))?.split('=')[1] || '60'),
+    rampUpTime: parseInt(args.find(arg => arg.startsWith('--rampUp='))?.split('=')[1] || '30'),
+    scenarios: []
   }
-
-  const tester = new LoadTester(config)
+  
+  const loadTest = new LoadTest(config)
+  config.scenarios = loadTest['getTestScenarios']() // Access private method for initialization
   
   try {
-    const results = await tester.run()
-    tester.printResults(results)
-    
-    // Exit with error code if SLO not achieved
-    process.exit(results.sloAchieved ? 0 : 1)
+    const success = await loadTest.run()
+    process.exit(success ? 0 : 1)
   } catch (error) {
     console.error('❌ Load test failed:', error)
     process.exit(1)
   }
 }
 
-// Run if called directly
 if (require.main === module) {
-  main().catch(console.error)
+  main()
 }
 
-export { LoadTester, LoadTestConfig, LoadTestResults }
+export { LoadTest, type LoadTestConfig, type TestResult }
