@@ -1,48 +1,89 @@
 /**
- * Edge-Optimized API Routes for High Performance
- * Task #014: 性能・p95最適化実装 - CDN・Edge・圧縮最適化
+ * Optimized Analytics API Route
+ * Task #014: 性能・p95最適化実装 - 最適化ミドルウェア適用
  * Target: 100CCU負荷・99.5%可用性・p95≤1500ms
  */
 
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getOptimizedAnalyticsData, measureQueryPerformance } from '@/lib/database/optimized-helpers'
-import { CacheHealthMonitor } from '@/lib/cache/server-cache'
+import { 
+  getOptimizedAnalyticsData, 
+  measureQueryPerformance,
+  getCacheStats,
+  warmUpCaches 
+} from '@/lib/database/optimized-helpers'
+import { 
+  withPerformanceOptimization,
+  withApiCache,
+  withRequestDeduplication,
+  withResponseCompression,
+  logMemoryUsage
+} from '@/lib/middleware/performance'
 import { DashboardFilters } from '@/types/database.types'
+import { performance } from 'perf_hooks'
 
-// Edge Runtime for global distribution
+// Edge Runtime for global distribution and performance
 export const runtime = 'edge'
 
-// Cache configuration for CDN
-export const revalidate = 300 // 5 minutes ISR
-export const dynamic = 'force-dynamic' // For real-time data
+// ISR configuration for optimal caching
+export const revalidate = 300 // 5 minutes
+export const dynamic = 'force-dynamic' // For real-time requirements
 
-// Response compression and headers
-const RESPONSE_HEADERS = {
+// Performance-optimized response headers
+const PERF_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
   'CDN-Cache-Control': 'max-age=300',
-  'Vercel-CDN-Cache-Control': 'max-age=300',
-  'Content-Encoding': 'gzip',
   'Vary': 'Accept-Encoding, Authorization',
   'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY'
+  'X-Frame-Options': 'DENY',
+  'X-Performance-Optimized': 'true',
+  'X-Cache-Strategy': 'multi-tier'
 }
 
-// ========================================
-// EDGE-OPTIMIZED ANALYTICS ENDPOINT
-// ========================================
+/**
+ * Optimized analytics data fetcher with all performance enhancements
+ */
+const getAnalyticsWithOptimizations = withRequestDeduplication(
+  withApiCache(
+    withPerformanceOptimization(
+      async (supabase: ReturnType<typeof createClient>, filters: DashboardFilters) => {
+        logMemoryUsage('analytics-start')
+        
+        const result = await measureQueryPerformance(
+          'analytics-optimized',
+          () => getOptimizedAnalyticsData(supabase, filters)
+        )
+        
+        logMemoryUsage('analytics-end')
+        return result
+      }
+    ),
+    {
+      keyGenerator: (supabase, filters) => `analytics:${JSON.stringify(filters)}`,
+      ttl: 1000 * 60 * 5 // 5 minutes
+    }
+  ),
+  (supabase, filters) => `analytics-dedup:${JSON.stringify(filters)}`
+)
 
+/**
+ * GET endpoint with full performance optimization
+ */
 export async function GET(request: NextRequest) {
   const startTime = performance.now()
   const requestId = crypto.randomUUID().slice(0, 8)
   
-  console.log(`[${requestId}] Analytics request started`)
+  console.log(`[${requestId}] 🚀 Optimized analytics request started`)
 
   try {
-    // Fast authentication check
+    // Fast authentication with performance monitoring
+    const authStart = performance.now()
     const supabase = createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const authTime = performance.now() - authStart
+    
+    console.log(`[${requestId}] Auth completed in ${authTime.toFixed(2)}ms`)
     
     if (authError || !user) {
       return new Response(
@@ -53,17 +94,17 @@ export async function GET(request: NextRequest) {
         }),
         { 
           status: 401,
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
+          headers: { 'Content-Type': 'application/json' }
         }
       )
     }
 
-    // Parse and validate query parameters
-    const searchParams = request.nextUrl.searchParams
-    const filters = await parseAndValidateFilters(searchParams)
+    // Parse and validate filters with performance monitoring
+    const filterStart = performance.now()
+    const filters = await parseOptimizedFilters(request.nextUrl.searchParams)
+    const filterTime = performance.now() - filterStart
+    
+    console.log(`[${requestId}] Filter parsing completed in ${filterTime.toFixed(2)}ms`)
     
     if (!filters) {
       return new Response(
@@ -74,77 +115,101 @@ export async function GET(request: NextRequest) {
         }),
         { 
           status: 400,
-          headers: RESPONSE_HEADERS
+          headers: PERF_HEADERS
         }
       )
     }
 
-    // Get client info for monitoring
+    // Get client info for monitoring and regional optimization
     const clientInfo = {
       ip: request.ip || 'unknown',
       userAgent: request.headers.get('user-agent') || 'unknown',
       region: request.geo?.region || 'unknown',
-      country: request.geo?.country || 'unknown'
+      country: request.geo?.country || 'unknown',
+      city: request.geo?.city || 'unknown'
     }
 
-    console.log(`[${requestId}] Client: ${clientInfo.region}, ${clientInfo.country}`)
+    console.log(`[${requestId}] Client: ${clientInfo.region}/${clientInfo.country}`)
 
-    // Fetch analytics data with performance monitoring
-    const analyticsData = await measureQueryPerformance(
-      `analytics-${requestId}`,
-      () => getOptimizedAnalyticsData(supabase, filters)
-    )
+    // Fetch analytics data with full optimization stack
+    const dataStart = performance.now()
+    const analyticsData = await getAnalyticsWithOptimizations(supabase, filters)
+    const dataTime = performance.now() - dataStart
+    
+    console.log(`[${requestId}] Data fetch completed in ${dataTime.toFixed(2)}ms`)
 
-    // Get cache health for monitoring
-    const cacheHealth = CacheHealthMonitor.getHealthMetrics()
-
+    // Get performance metrics
+    const cacheStats = getCacheStats()
     const responseTime = performance.now() - startTime
-    console.log(`[${requestId}] Request completed in ${responseTime.toFixed(2)}ms`)
 
-    // Prepare optimized response
+    // Performance status assessment
+    const performanceStatus = {
+      target: 1500,
+      actual: Math.round(responseTime),
+      status: responseTime <= 1500 ? 'excellent' : responseTime <= 2000 ? 'good' : 'slow',
+      p95Compliant: responseTime <= 1500
+    }
+
+    // Log performance metrics
+    console.log(`[${requestId}] ✅ Request completed in ${responseTime.toFixed(2)}ms (${performanceStatus.status})`)
+    
+    if (!performanceStatus.p95Compliant) {
+      console.warn(`[${requestId}] ⚠️  P95 target exceeded: ${responseTime.toFixed(2)}ms > 1500ms`)
+    }
+
+    // Prepare optimized response with comprehensive metadata
     const response = {
       data: analyticsData,
       meta: {
         requestId,
-        responseTimeMs: Math.round(responseTime),
-        userId: user.id,
-        timestamp: new Date().toISOString(),
-        filtersApplied: filters,
-        cacheHealth: {
-          hitRatio: cacheHealth.hitRatio,
-          overall: cacheHealth.overall
+        performance: {
+          ...performanceStatus,
+          breakdown: {
+            auth: Math.round(authTime),
+            filters: Math.round(filterTime),
+            data: Math.round(dataTime),
+            total: Math.round(responseTime)
+          }
+        },
+        cache: {
+          stats: cacheStats,
+          hitRatioPercent: Object.values(cacheStats).reduce((acc, cache) => acc + cache.hitRatio, 0) / Object.keys(cacheStats).length * 100
         },
         client: clientInfo,
-        performance: {
-          target: 1500,
-          actual: Math.round(responseTime),
-          status: responseTime <= 1500 ? 'good' : 'slow'
-        }
+        server: {
+          timestamp: new Date().toISOString(),
+          version: '1.0-optimized',
+          runtime: 'edge'
+        },
+        filters: filters,
+        recordCounts: analyticsData.meta?.recordCounts || {}
       }
     }
 
-    // Log successful request
-    console.log(`[${requestId}] Success - Cache hit ratio: ${(cacheHealth.hitRatio * 100).toFixed(1)}%`)
-
-    return new Response(
+    // Apply response compression and caching headers
+    const optimizedResponse = new Response(
       JSON.stringify(response),
       {
         status: 200,
         headers: {
-          ...RESPONSE_HEADERS,
+          ...PERF_HEADERS,
           'X-Request-ID': requestId,
           'X-Response-Time': responseTime.toFixed(2),
-          'X-Cache-Status': cacheHealth.overall,
-          'X-Region': clientInfo.region
+          'X-Performance-Status': performanceStatus.status,
+          'X-Cache-Hit-Ratio': (response.meta.cache.hitRatioPercent).toFixed(1),
+          'X-Region': clientInfo.region,
+          'X-P95-Compliant': performanceStatus.p95Compliant.toString()
         }
       }
     )
+
+    return withResponseCompression(optimizedResponse)
 
   } catch (error) {
     const responseTime = performance.now() - startTime
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     
-    console.error(`[${requestId}] Error after ${responseTime.toFixed(2)}ms:`, error)
+    console.error(`[${requestId}] ❌ Error after ${responseTime.toFixed(2)}ms:`, error)
 
     return new Response(
       JSON.stringify({
@@ -152,24 +217,27 @@ export async function GET(request: NextRequest) {
         requestId,
         message: process.env.NODE_ENV === 'development' ? errorMessage : 'Something went wrong',
         timestamp: new Date().toISOString(),
-        responseTimeMs: Math.round(responseTime)
+        performance: {
+          responseTimeMs: Math.round(responseTime),
+          failed: true
+        }
       }),
       {
         status: 500,
         headers: {
           'Content-Type': 'application/json',
           'X-Request-ID': requestId,
-          'X-Response-Time': responseTime.toFixed(2)
+          'X-Response-Time': responseTime.toFixed(2),
+          'X-Performance-Status': 'error'
         }
       }
     )
   }
 }
 
-// ========================================
-// EDGE-OPTIMIZED POST ENDPOINT
-// ========================================
-
+/**
+ * POST endpoint with optimization stack
+ */
 export async function POST(request: NextRequest) {
   const startTime = performance.now()
   const requestId = crypto.randomUUID().slice(0, 8)
@@ -185,45 +253,47 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Parse request body with size limit
+    // Parse request body with size validation
     const body = await request.json()
     const { filters } = body as { filters: DashboardFilters }
 
-    if (!validateFilters(filters)) {
+    if (!validateOptimizedFilters(filters)) {
       return new Response(
         JSON.stringify({ error: 'Invalid filters', requestId }),
-        { status: 400, headers: RESPONSE_HEADERS }
+        { status: 400, headers: PERF_HEADERS }
       )
     }
 
-    // Process request
-    const analyticsData = await measureQueryPerformance(
-      `analytics-post-${requestId}`,
-      () => getOptimizedAnalyticsData(supabase, filters)
-    )
-
+    // Process with optimization stack
+    const analyticsData = await getAnalyticsWithOptimizations(supabase, filters)
     const responseTime = performance.now() - startTime
+    
     const response = {
       data: analyticsData,
       meta: {
         requestId,
-        responseTimeMs: Math.round(responseTime),
+        performance: {
+          responseTimeMs: Math.round(responseTime),
+          p95Compliant: responseTime <= 1500
+        },
         userId: user.id,
         timestamp: new Date().toISOString(),
         filtersApplied: filters
       }
     }
 
-    return new Response(
-      JSON.stringify(response),
-      {
-        status: 200,
-        headers: {
-          ...RESPONSE_HEADERS,
-          'X-Request-ID': requestId,
-          'X-Response-Time': responseTime.toFixed(2)
+    return withResponseCompression(
+      new Response(
+        JSON.stringify(response),
+        {
+          status: 200,
+          headers: {
+            ...PERF_HEADERS,
+            'X-Request-ID': requestId,
+            'X-Response-Time': responseTime.toFixed(2)
+          }
         }
-      }
+      )
     )
 
   } catch (error) {
@@ -241,99 +311,28 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ========================================
-// UTILITY FUNCTIONS
-// ========================================
-
-async function parseAndValidateFilters(searchParams: URLSearchParams): Promise<DashboardFilters | null> {
-  try {
-    const startDate = searchParams.get('start')
-    const endDate = searchParams.get('end')
-    
-    if (!startDate || !endDate) {
-      return null
-    }
-
-    // Validate date format and range
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return null
-    }
-
-    // Limit date range to prevent abuse
-    const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-    if (daysDiff > 365) { // Max 1 year
-      return null
-    }
-
-    const storeIds = searchParams.get('storeIds')?.split(',').filter(Boolean)
-    const departments = searchParams.get('departments')?.split(',').filter(Boolean)
-    const productCategories = searchParams.get('productCategories')?.split(',').filter(Boolean)
-
-    return {
-      dateRange: { 
-        start: startDate, 
-        end: endDate 
-      },
-      storeIds: storeIds?.length ? storeIds : undefined,
-      departments: departments?.length ? departments : undefined,
-      productCategories: productCategories?.length ? productCategories : undefined
-    }
-  } catch (error) {
-    console.error('Filter parsing error:', error)
-    return null
-  }
-}
-
-function validateFilters(filters: DashboardFilters): boolean {
-  if (!filters?.dateRange?.start || !filters?.dateRange?.end) {
-    return false
-  }
-
-  try {
-    const start = new Date(filters.dateRange.start)
-    const end = new Date(filters.dateRange.end)
-    
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return false
-    }
-
-    if (start >= end) {
-      return false
-    }
-
-    // Additional validation rules
-    const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
-    if (daysDiff > 365) {
-      return false
-    }
-
-    return true
-  } catch {
-    return false
-  }
-}
-
-// ========================================
-// HEALTH CHECK ENDPOINT
-// ========================================
-
+/**
+ * Health check endpoint with performance metrics
+ */
 export async function HEAD(request: NextRequest) {
   const startTime = performance.now()
   
   try {
-    // Quick health check
-    const cacheHealth = CacheHealthMonitor.getHealthMetrics()
+    const cacheStats = getCacheStats()
     const responseTime = performance.now() - startTime
+    
+    // Overall health assessment
+    const overallHitRatio = Object.values(cacheStats).reduce((acc, cache) => acc + cache.hitRatio, 0) / Object.keys(cacheStats).length
+    const healthStatus = overallHitRatio > 0.7 ? 'healthy' : overallHitRatio > 0.5 ? 'warning' : 'critical'
     
     return new Response(null, {
       status: 200,
       headers: {
-        'X-Health-Status': cacheHealth.overall,
-        'X-Cache-Hit-Ratio': (cacheHealth.hitRatio * 100).toFixed(1),
+        'X-Health-Status': healthStatus,
+        'X-Cache-Hit-Ratio': (overallHitRatio * 100).toFixed(1),
         'X-Response-Time': responseTime.toFixed(2),
+        'X-P95-Target': '1500',
+        'X-Performance-Optimized': 'true',
         'Cache-Control': 'no-cache'
       }
     })
@@ -342,8 +341,138 @@ export async function HEAD(request: NextRequest) {
       status: 503,
       headers: {
         'X-Health-Status': 'critical',
+        'X-Error': 'health-check-failed',
         'Cache-Control': 'no-cache'
       }
     })
+  }
+}
+
+/**
+ * Cache warming endpoint for performance optimization
+ */
+export async function PUT(request: NextRequest) {
+  const startTime = performance.now()
+  const requestId = crypto.randomUUID().slice(0, 8)
+  
+  try {
+    const supabase = createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401 }
+      )
+    }
+
+    console.log(`[${requestId}] 🔥 Cache warm-up requested`)
+    
+    // Warm up caches
+    await warmUpCaches(supabase)
+    
+    const responseTime = performance.now() - startTime
+    console.log(`[${requestId}] ✅ Cache warm-up completed in ${responseTime.toFixed(2)}ms`)
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        requestId,
+        responseTimeMs: Math.round(responseTime),
+        message: 'Caches warmed up successfully'
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Request-ID': requestId
+        }
+      }
+    )
+    
+  } catch (error) {
+    const responseTime = performance.now() - startTime
+    console.error(`[${requestId}] Cache warm-up failed:`, error)
+    
+    return new Response(
+      JSON.stringify({
+        error: 'Cache warm-up failed',
+        requestId,
+        responseTimeMs: Math.round(responseTime)
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+}
+
+// ========================================
+// OPTIMIZED UTILITY FUNCTIONS
+// ========================================
+
+/**
+ * Optimized filter parsing with validation
+ */
+async function parseOptimizedFilters(searchParams: URLSearchParams): Promise<DashboardFilters | null> {
+  try {
+    const startDate = searchParams.get('start')
+    const endDate = searchParams.get('end')
+    
+    if (!startDate || !endDate) {
+      return null
+    }
+
+    // Fast date validation
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return null
+    }
+
+    // Performance: limit date range to prevent expensive queries
+    const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    if (daysDiff > 365 || daysDiff < 0) {
+      return null
+    }
+
+    // Parse optional filters
+    const storeIds = searchParams.get('storeIds')?.split(',').filter(Boolean)
+    const departments = searchParams.get('departments')?.split(',').filter(Boolean)
+    const productCategories = searchParams.get('productCategories')?.split(',').filter(Boolean)
+
+    return {
+      dateRange: { start: startDate, end: endDate },
+      storeIds: storeIds?.length ? storeIds : undefined,
+      departments: departments?.length ? departments : undefined,
+      productCategories: productCategories?.length ? productCategories : undefined
+    }
+  } catch (error) {
+    console.error('Optimized filter parsing error:', error)
+    return null
+  }
+}
+
+/**
+ * Fast filter validation
+ */
+function validateOptimizedFilters(filters: DashboardFilters): boolean {
+  if (!filters?.dateRange?.start || !filters?.dateRange?.end) {
+    return false
+  }
+
+  try {
+    const start = new Date(filters.dateRange.start)
+    const end = new Date(filters.dateRange.end)
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
+      return false
+    }
+
+    // Performance limit
+    const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
+    return daysDiff <= 365 && daysDiff >= 0
+
+  } catch {
+    return false
   }
 }
