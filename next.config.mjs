@@ -3,13 +3,11 @@ const nextConfig = {
   // Next.js 15.5.0 最適化設定
   experimental: {
     optimizePackageImports: ['recharts', 'lucide-react', '@supabase/supabase-js'],
-    bundlePagesRouterDependencies: true, // Page Router dependency optimization
     optimizeServerReact: true, // Server component optimization
     serverMinification: true, // Server code minification
     serverSourceMaps: false, // Disable source maps in production
     
-    // Advanced caching
-    isrMemoryCacheSize: 0, // Use disk cache only
+    // Advanced caching - ISR settings moved to Route Handler level
     staleTimes: {
       dynamic: 30, // 30 seconds for dynamic content
       static: 300, // 5 minutes for static content
@@ -17,16 +15,17 @@ const nextConfig = {
     
     // Performance optimizations
     webVitalsAttribution: ['CLS', 'LCP', 'FCP', 'TTFB', 'FID'],
-    instrumentationHook: true,
     
     // Bundle optimizations
     optimizeCss: true,
-    turbo: {
-      rules: {
-        '*.svg': {
-          loaders: ['@svgr/webpack'],
-          as: '*.js',
-        },
+  },
+  
+  // Turbopack configuration (moved from experimental.turbo)
+  turbopack: {
+    rules: {
+      '*.svg': {
+        loaders: ['@svgr/webpack'],
+        as: '*.js',
       },
     }
   },
@@ -61,9 +60,6 @@ const nextConfig = {
     loaderFile: '',
     disableStaticImages: false,
   },
-  
-  // フォント最適化
-  optimizeFonts: true,
   
   // セキュリティヘッダー強化
   async headers() {
@@ -224,7 +220,7 @@ const nextConfig = {
           },
         },
         
-        // Minimize configuration
+        // Minimize configuration - use updated Terser path
         minimize: true,
         minimizer: [
           '...',
@@ -288,7 +284,6 @@ const nextConfig = {
     
     // Advanced production optimizations
     productionBrowserSourceMaps: false,
-    optimizeFonts: true,
     modularizeImports: {
       'lucide-react': {
         transform: 'lucide-react/dist/esm/icons/{{member}}',
