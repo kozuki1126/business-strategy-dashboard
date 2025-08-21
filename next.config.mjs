@@ -3,9 +3,9 @@ const nextConfig = {
   // Next.js 15.5.0 最適化設定
   experimental: {
     optimizePackageImports: ['recharts', 'lucide-react', '@supabase/supabase-js'],
-    optimizeServerReact: true, // Server component optimization
-    serverMinification: true, // Server code minification
-    serverSourceMaps: false, // Disable source maps in production
+    optimizeServerReact: true,
+    serverMinification: true,
+    serverSourceMaps: false,
     
     // Advanced caching - ISR settings moved to Route Handler level
     staleTimes: {
@@ -153,7 +153,7 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
   
-  // Webpack設定高度最適化
+  // Webpack設定高度最適化 - Next.js 15完全対応版
   webpack: (config, { isServer, dev }) => {
     // Production最適化
     if (!dev) {
@@ -220,9 +220,9 @@ const nextConfig = {
           },
         },
         
-        // Use Next.js 15 default minimization - no custom minimizer
+        // ✅ Next.js 15デフォルトの最適化を使用（カスタムTerserPlugin削除）
         minimize: true,
-        // Remove custom minimizer configuration to avoid path issues
+        // カスタムminimizerは削除 - Next.js 15の内蔵最適化を使用
       }
       
       // Memory leak prevention
