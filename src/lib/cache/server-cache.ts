@@ -6,6 +6,7 @@
 
 import { LRUCache } from 'lru-cache'
 import { unstable_cache } from 'next/cache'
+import { getCachedMasterData as getMasterDataFromDB } from './master-data-cache'
 
 // 型定義
 interface CacheConfig {
@@ -197,24 +198,10 @@ const serverCache = new ServerSideCache(2000) // 2000 entries max
 // NEXT.JS ISR CACHE WRAPPERS
 // ========================================
 
-// Analytics data cache with ISR
-export const getCachedAnalyticsData = unstable_cache(
-  async (filters: any) => {
-    // This will be implemented with actual database logic
-    return null // Placeholder
-  },
-  ['analytics-data'],
-  {
-    revalidate: 300, // 5 minutes
-    tags: ['analytics']
-  }
-)
-
 // Master data cache (stores, departments) - longer TTL
 export const getCachedMasterData = unstable_cache(
-  async (type: string) => {
-    // This will be implemented with actual database logic
-    return null // Placeholder
+  async (type: 'stores' | 'departments' | 'categories') => {
+    return await getMasterDataFromDB(type)
   },
   ['master-data'],
   {
@@ -226,8 +213,8 @@ export const getCachedMasterData = unstable_cache(
 // External data cache (market, weather) - medium TTL
 export const getCachedExternalData = unstable_cache(
   async (type: string, params: any) => {
-    // This will be implemented with actual database logic
-    return null // Placeholder
+    const { getCachedExternalData: getExternalData } = await import('./master-data-cache')
+    return await getExternalData(type as any, params)
   },
   ['external-data'],
   {
@@ -414,9 +401,9 @@ export class CacheWarmer {
     try {
       // Pre-load master data
       await Promise.all([
-        // getCachedMasterData('stores'),
-        // getCachedMasterData('departments'),
-        // getCachedExternalData('market', { symbols: ['TOPIX', 'NIKKEI225'] })
+        getCachedMasterData('stores'),
+        getCachedMasterData('departments'),
+        getCachedMasterData('categories')
       ])
       
       console.log('Cache warming completed successfully')
