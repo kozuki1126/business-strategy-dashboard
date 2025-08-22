@@ -39,8 +39,10 @@ export function usePerformanceMonitor() {
       queryCount: prev.queryCount + 1
     }))
 
-    // Log performance metrics
-    console.log(`Performance [${label}]: ${duration.toFixed(2)}ms`)
+    // Log performance metrics only in development
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`Performance [${label}]: ${duration.toFixed(2)}ms`)
+    }
     
     // Warn if over target
     if (duration > 1500) {
@@ -103,7 +105,9 @@ export function useAnalyticsData(filters: DashboardFilters) {
     const now = Date.now()
     
     if (cached && (now - cached.timestamp < CACHE_TIMEOUT)) {
-      console.log('Using cached analytics data')
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Using cached analytics data')
+      }
       setData(cached.data)
       return cached.data
     }
