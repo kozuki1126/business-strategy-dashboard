@@ -1,592 +1,391 @@
 /**
- * Performance-Optimized Analytics API with ISR
- * Task #014: 性能・p95最適化実装 - ISR・キャッシュ・N+1解消
+ * Optimized Analytics API Endpoint for Task #014
+ * High-Performance Analytics with Sub-Second Response Times
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { analyticsOptimizer, optimizeApiResponse } from '@/lib/performance/api-optimizations'
+import { logAuditEvent } from '@/lib/services/audit'
 import { createClient } from '@/lib/supabase/server'
-import { databaseOptimizer } from '@/lib/database/performance-optimizer'
-import { performanceCache, generateCacheKey, cacheUtils } from '@/lib/cache/performance-cache'
-import { sloMonitor } from '@/lib/monitoring/slo-monitor'
-import { performance } from 'perf_hooks'
+import { getCurrentUser } from '@/lib/auth-server'
+import { z } from 'zod'
 
-interface AnalyticsParams {
-  startDate?: string
-  endDate?: string
-  storeIds?: string[]
-  departments?: string[]
-  type?: 'dashboard' | 'correlation' | 'trends' | 'comparison'
-}
+// Validation schema for analytics requests
+const analyticsRequestSchema = z.object({
+  type: z.enum(['dashboard', 'correlation', 'export']).default('dashboard'),
+  filters: z.object({
+    dateRange: z.object({
+      start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+    }),
+    storeIds: z.array(z.number()).optional(),
+    departments: z.array(z.string()).optional(),
+    productCategories: z.array(z.string()).optional()
+  }),
+  options: z.object({
+    enableCache: z.boolean().default(true),
+    enableCompression: z.boolean().default(true),
+    priority: z.enum(['high', 'medium', 'low']).default('medium'),
+    maxExecutionTime: z.number().min(1000).max(30000).default(15000)
+  }).optional()
+})
 
 interface PerformanceMetrics {
-  requestId: string
-  startTime: number
-  endTime: number
-  responseTime: number
+  executionTime: number
   cacheHit: boolean
-  queryCount: number
-  source: 'cache' | 'database' | 'materialized_view'
+  dataSize: number
+  compressionRatio?: number
+  queryOptimizations: string[]
+  responseTime: number
 }
 
+/**
+ * GET /api/analytics/optimized - High-performance analytics endpoint
+ */
 export async function GET(request: NextRequest) {
-  const requestId = crypto.randomUUID()
   const startTime = performance.now()
-  
-  let metrics: PerformanceMetrics = {
-    requestId,
-    startTime,
-    endTime: 0,
-    responseTime: 0,
+  let performanceMetrics: PerformanceMetrics = {
+    executionTime: 0,
     cacheHit: false,
-    queryCount: 0,
-    source: 'database'
+    dataSize: 0,
+    queryOptimizations: [],
+    responseTime: 0
   }
-  
+
   try {
-    // Parse request parameters
-    const searchParams = request.nextUrl.searchParams
-    const params: AnalyticsParams = {
-      startDate: searchParams.get('startDate') || undefined,
-      endDate: searchParams.get('endDate') || undefined,
-      storeIds: searchParams.get('storeIds')?.split(',') || undefined,
-      departments: searchParams.get('departments')?.split(',') || undefined,
-      type: (searchParams.get('type') as any) || 'dashboard'
+    // Authentication check
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'AUTH_REQUIRED' },
+        { status: 401 }
+      )
     }
-    
-    // Generate cache key
-    const cacheKey = generateCacheKey.analytics(params)
-    
-    // Try cache first
-    const cachedData = performanceCache.get(cacheKey)
-    if (cachedData) {
-      metrics.cacheHit = true
-      metrics.source = 'cache'
-      metrics.endTime = performance.now()
-      metrics.responseTime = metrics.endTime - metrics.startTime
-      
-      return NextResponse.json({
-        success: true,
-        data: cachedData,
-        cached: true,
-        performance: {
-          responseTime: metrics.responseTime,
-          source: metrics.source
-        }
-      }, {
-        headers: {
-          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-          'X-Cache': 'HIT',
-          'X-Response-Time': `${metrics.responseTime.toFixed(2)}ms`
-        }
-      })
+
+    // Parse and validate query parameters
+    const url = new URL(request.url)
+    const type = url.searchParams.get('type') || 'dashboard'
+    const startDate = url.searchParams.get('startDate')
+    const endDate = url.searchParams.get('endDate')
+    const storeIds = url.searchParams.get('storeIds')?.split(',').map(Number).filter(Boolean)
+    const departments = url.searchParams.get('departments')?.split(',').filter(Boolean)
+    const enableCache = url.searchParams.get('cache') !== 'false'
+
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: 'Missing required parameters: startDate, endDate', code: 'MISSING_PARAMS' },
+        { status: 400 }
+      )
     }
-    
-    // Fetch from optimized database functions
-    const supabase = createClient()
-    let data: any
-    
-    switch (params.type) {
+
+    const requestData = {
+      type: type as 'dashboard' | 'correlation' | 'export',
+      filters: {
+        dateRange: { start: startDate, end: endDate },
+        ...(storeIds?.length && { storeIds }),
+        ...(departments?.length && { departments })
+      },
+      options: {
+        enableCache,
+        enableCompression: true,
+        priority: 'high' as const,
+        maxExecutionTime: 15000
+      }
+    }
+
+    // Validate request
+    const validationResult = analyticsRequestSchema.safeParse(requestData)
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { 
+          error: 'Invalid request parameters', 
+          details: validationResult.error.errors,
+          code: 'VALIDATION_ERROR'
+        },
+        { status: 400 }
+      )
+    }
+
+    const validatedRequest = validationResult.data
+
+    // Execute optimized query based on type
+    let result
+    const queryStartTime = performance.now()
+
+    switch (validatedRequest.type) {
       case 'dashboard':
-        data = await fetchDashboardAnalytics(supabase, params, metrics)
+        result = await analyticsOptimizer.getDashboardData(validatedRequest.filters)
+        performanceMetrics.queryOptimizations.push('materialized_view', 'aggregation')
         break
+      
       case 'correlation':
-        data = await fetchCorrelationAnalytics(supabase, params, metrics)
+        result = await analyticsOptimizer.getCorrelationData(validatedRequest.filters)
+        performanceMetrics.queryOptimizations.push('pre_computed_stats', 'correlation_matrix')
         break
-      case 'trends':
-        data = await fetchTrendsAnalytics(supabase, params, metrics)
+      
+      case 'export':
+        result = await analyticsOptimizer.getExportData({
+          ...validatedRequest.filters,
+          format: 'csv',
+          limit: 10000
+        })
+        performanceMetrics.queryOptimizations.push('streaming', 'batch_processing')
         break
-      case 'comparison':
-        data = await fetchComparisonAnalytics(supabase, params, metrics)
-        break
+      
       default:
-        data = await fetchDashboardAnalytics(supabase, params, metrics)
+        return NextResponse.json(
+          { error: 'Invalid analytics type', code: 'INVALID_TYPE' },
+          { status: 400 }
+        )
     }
-    
-    // Cache the result
-    performanceCache.set(cacheKey, data)
-    
-    metrics.endTime = performance.now()
-    metrics.responseTime = metrics.endTime - metrics.startTime
-    
-    // Log performance metrics
-    await logPerformanceMetrics(metrics, params)
-    
-    // Check SLO compliance
-    if (metrics.responseTime > 1500) {
-      console.warn(`⚠️  SLO violation: Response time ${metrics.responseTime.toFixed(2)}ms > 1500ms`)
-    }
-    
-    return NextResponse.json({
-      success: true,
-      data,
-      cached: false,
-      performance: {
-        responseTime: metrics.responseTime,
-        source: metrics.source,
-        queryCount: metrics.queryCount
-      }
-    }, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-        'X-Cache': 'MISS',
-        'X-Response-Time': `${metrics.responseTime.toFixed(2)}ms`,
-        'X-Query-Count': metrics.queryCount.toString()
-      }
+
+    // Update performance metrics
+    performanceMetrics.executionTime = performance.now() - queryStartTime
+    performanceMetrics.cacheHit = result.cached
+    performanceMetrics.dataSize = result.metadata.dataSize
+    performanceMetrics.compressionRatio = result.metadata.compressionRatio
+
+    // Apply response optimizations
+    const optimizedData = optimizeApiResponse(result.data, {
+      enableCompression: validatedRequest.options?.enableCompression,
+      enableMinification: true
     })
-    
+
+    // Log audit event (non-blocking)
+    const supabase = createClient()
+    logAuditEvent(
+      supabase,
+      'analytics_query',
+      `analytics_${validatedRequest.type}`,
+      {
+        filters: validatedRequest.filters,
+        executionTime: performanceMetrics.executionTime,
+        cacheHit: performanceMetrics.cacheHit,
+        dataSize: performanceMetrics.dataSize,
+        queryOptimizations: performanceMetrics.queryOptimizations
+      },
+      user.id
+    ).catch(console.error) // Don't let audit errors affect response
+
+    // Final performance metrics
+    performanceMetrics.responseTime = performance.now() - startTime
+
+    // Check if performance targets are met
+    const performanceAlert = performanceMetrics.responseTime > 1500 ? {
+      warning: 'Response time exceeded 1500ms target',
+      actualTime: Math.round(performanceMetrics.responseTime),
+      suggestions: [
+        'Consider reducing date range',
+        'Add more specific filters',
+        'Check database performance'
+      ]
+    } : null
+
+    // Build response with metadata
+    const response = {
+      success: true,
+      data: optimizedData,
+      metadata: {
+        type: validatedRequest.type,
+        filters: validatedRequest.filters,
+        performance: performanceMetrics,
+        cacheStats: analyticsOptimizer.getCacheStats(),
+        timestamp: new Date().toISOString()
+      },
+      ...(performanceAlert && { performanceAlert })
+    }
+
+    // Set performance headers
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+      'X-Response-Time': Math.round(performanceMetrics.responseTime).toString(),
+      'X-Cache-Status': performanceMetrics.cacheHit ? 'HIT' : 'MISS',
+      'X-Data-Size': performanceMetrics.dataSize.toString(),
+      'X-Query-Optimizations': performanceMetrics.queryOptimizations.join(',')
+    })
+
+    // Enable caching for GET requests
+    if (performanceMetrics.cacheHit || performanceMetrics.responseTime < 1000) {
+      headers.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600')
+    } else {
+      headers.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120')
+    }
+
+    return NextResponse.json(response, { headers })
+
   } catch (error) {
-    metrics.endTime = performance.now()
-    metrics.responseTime = metrics.endTime - metrics.startTime
-    
     console.error('Analytics API error:', error)
     
+    performanceMetrics.responseTime = performance.now() - startTime
+
     // Log error for monitoring
-    await logErrorMetrics(error, metrics, requestId)
+    const supabase = createClient()
+    const user = await getCurrentUser().catch(() => null)
     
-    return NextResponse.json({
-      success: false,
-      error: 'Internal server error',
-      performance: {
-        responseTime: metrics.responseTime
+    if (user) {
+      logAuditEvent(
+        supabase,
+        'analytics_error',
+        'analytics_api',
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          executionTime: performanceMetrics.responseTime,
+          stack: error instanceof Error ? error.stack : undefined
+        },
+        user.id
+      ).catch(console.error)
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        metadata: {
+          performance: performanceMetrics,
+          timestamp: new Date().toISOString()
+        }
+      },
+      { 
+        status: 500,
+        headers: {
+          'X-Response-Time': Math.round(performanceMetrics.responseTime).toString(),
+          'X-Error': 'true'
+        }
       }
-    }, { 
-      status: 500,
-      headers: {
-        'X-Response-Time': `${metrics.responseTime.toFixed(2)}ms`
-      }
-    })
-  }
-}
-
-/**
- * Fetch dashboard analytics using optimized database functions
- */
-async function fetchDashboardAnalytics(
-  supabase: any, 
-  params: AnalyticsParams, 
-  metrics: PerformanceMetrics
-): Promise<any> {
-  const { startDate, endDate, storeIds } = params
-  
-  // Use optimized materialized view or aggregation function
-  const { data: salesSummary, error } = await supabase
-    .rpc('get_sales_summary_with_context', {
-      p_start_date: startDate || '2025-08-01',
-      p_end_date: endDate || '2025-08-21',
-      p_store_ids: storeIds || null
-    })
-  
-  if (error) throw error
-  
-  metrics.queryCount = 1 // Single optimized query instead of N+1
-  metrics.source = 'materialized_view'
-  
-  // Process and aggregate data
-  const aggregatedData = {
-    summary: {
-      totalRevenue: salesSummary.reduce((sum: number, row: any) => sum + parseFloat(row.total_revenue_ex_tax || 0), 0),
-      totalFootfall: salesSummary.reduce((sum: number, row: any) => sum + (row.total_footfall || 0), 0),
-      totalTransactions: salesSummary.reduce((sum: number, row: any) => sum + (row.total_transactions || 0), 0),
-      storeCount: new Set(salesSummary.map((row: any) => row.store_id)).size
-    },
-    daily: salesSummary.map((row: any) => ({
-      date: row.date,
-      storeId: row.store_id,
-      storeName: row.store_name,
-      revenue: parseFloat(row.total_revenue_ex_tax || 0),
-      footfall: row.total_footfall || 0,
-      transactions: row.total_transactions || 0,
-      weather: row.weather_condition,
-      temperature: row.temperature,
-      eventsCount: row.nearby_events_count || 0,
-      dayOfWeek: row.day_of_week?.trim()
-    })),
-    trends: calculateTrends(salesSummary),
-    correlations: calculateCorrelations(salesSummary)
-  }
-  
-  return aggregatedData
-}
-
-/**
- * Fetch correlation analytics using optimized database functions
- */
-async function fetchCorrelationAnalytics(
-  supabase: any, 
-  params: AnalyticsParams, 
-  metrics: PerformanceMetrics
-): Promise<any> {
-  const { startDate, endDate } = params
-  
-  // Use optimized correlation function
-  const { data: correlationData, error } = await supabase
-    .rpc('get_analytics_correlation_data', {
-      p_start_date: startDate || '2025-08-01',
-      p_end_date: endDate || '2025-08-21'
-    })
-  
-  if (error) throw error
-  
-  metrics.queryCount = 1
-  metrics.source = 'materialized_view'
-  
-  return {
-    correlations: {
-      weather: calculateWeatherCorrelation(correlationData),
-      dayOfWeek: calculateDayOfWeekCorrelation(correlationData),
-      events: calculateEventsCorrelation(correlationData)
-    },
-    heatmap: generateCorrelationHeatmap(correlationData),
-    summary: {
-      dataPoints: correlationData.length,
-      dateRange: { start: startDate, end: endDate }
-    }
-  }
-}
-
-/**
- * Fetch trends analytics with optimized queries
- */
-async function fetchTrendsAnalytics(
-  supabase: any, 
-  params: AnalyticsParams, 
-  metrics: PerformanceMetrics
-): Promise<any> {
-  // Use cached or materialized view data
-  const cacheKey = generateCacheKey.analytics({ ...params, type: 'trends_base' })
-  
-  const trendsData = await cacheUtils.getOrFetch(
-    performanceCache,
-    cacheKey,
-    async () => {
-      const { data, error } = await supabase
-        .from('dashboard_metrics_mv')
-        .select('*')
-        .gte('date', params.startDate || '2025-08-01')
-        .lte('date', params.endDate || '2025-08-21')
-        .order('date', { ascending: true })
-      
-      if (error) throw error
-      return data
-    }
-  )
-  
-  metrics.queryCount = 1
-  metrics.source = 'materialized_view'
-  
-  return {
-    daily: trendsData,
-    weekly: aggregateByWeek(trendsData),
-    monthly: aggregateByMonth(trendsData),
-    growth: calculateGrowthRates(trendsData)
-  }
-}
-
-/**
- * Fetch comparison analytics
- */
-async function fetchComparisonAnalytics(
-  supabase: any, 
-  params: AnalyticsParams, 
-  metrics: PerformanceMetrics
-): Promise<any> {
-  // Parallel queries for comparison periods
-  const [currentPeriod, previousPeriod] = await Promise.all([
-    supabase.rpc('get_sales_summary_with_context', {
-      p_start_date: params.startDate || '2025-08-01',
-      p_end_date: params.endDate || '2025-08-21',
-      p_store_ids: params.storeIds || null
-    }),
-    supabase.rpc('get_sales_summary_with_context', {
-      p_start_date: calculatePreviousPeriodStart(params.startDate || '2025-08-01'),
-      p_end_date: calculatePreviousPeriodEnd(params.endDate || '2025-08-21'),
-      p_store_ids: params.storeIds || null
-    })
-  ])
-  
-  if (currentPeriod.error) throw currentPeriod.error
-  if (previousPeriod.error) throw previousPeriod.error
-  
-  metrics.queryCount = 2
-  metrics.source = 'materialized_view'
-  
-  return {
-    current: aggregatePeriodData(currentPeriod.data),
-    previous: aggregatePeriodData(previousPeriod.data),
-    comparison: calculateComparison(currentPeriod.data, previousPeriod.data)
-  }
-}
-
-/**
- * Calculate trends from sales data
- */
-function calculateTrends(salesData: any[]): any {
-  const dailyTotals = salesData.reduce((acc: any, row: any) => {
-    const date = row.date
-    if (!acc[date]) {
-      acc[date] = { revenue: 0, footfall: 0, transactions: 0 }
-    }
-    acc[date].revenue += parseFloat(row.total_revenue_ex_tax || 0)
-    acc[date].footfall += row.total_footfall || 0
-    acc[date].transactions += row.total_transactions || 0
-    return acc
-  }, {})
-  
-  const dates = Object.keys(dailyTotals).sort()
-  const revenues = dates.map(date => dailyTotals[date].revenue)
-  
-  return {
-    revenue: {
-      data: revenues,
-      trend: calculateLinearTrend(revenues),
-      growth: calculateGrowthRate(revenues)
-    },
-    footfall: {
-      data: dates.map(date => dailyTotals[date].footfall),
-      trend: calculateLinearTrend(dates.map(date => dailyTotals[date].footfall))
-    }
-  }
-}
-
-/**
- * Calculate correlations between sales and external factors
- */
-function calculateCorrelations(salesData: any[]): any {
-  return {
-    weatherRevenue: calculatePearsonCorrelation(
-      salesData.map(row => row.temperature || 0),
-      salesData.map(row => parseFloat(row.total_revenue_ex_tax || 0))
-    ),
-    eventsRevenue: calculatePearsonCorrelation(
-      salesData.map(row => row.nearby_events_count || 0),
-      salesData.map(row => parseFloat(row.total_revenue_ex_tax || 0))
     )
   }
 }
 
 /**
- * Helper functions for data processing
+ * POST /api/analytics/optimized - Batch analytics requests
  */
-function calculatePearsonCorrelation(x: number[], y: number[]): number {
-  if (x.length !== y.length || x.length === 0) return 0
+export async function POST(request: NextRequest) {
+  const startTime = performance.now()
   
-  const n = x.length
-  const sumX = x.reduce((a, b) => a + b, 0)
-  const sumY = y.reduce((a, b) => a + b, 0)
-  const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0)
-  const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0)
-  const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0)
-  
-  const numerator = n * sumXY - sumX * sumY
-  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY))
-  
-  return denominator === 0 ? 0 : numerator / denominator
-}
-
-function calculateLinearTrend(data: number[]): number {
-  if (data.length < 2) return 0
-  
-  const n = data.length
-  const x = Array.from({ length: n }, (_, i) => i)
-  const y = data
-  
-  const sumX = x.reduce((a, b) => a + b, 0)
-  const sumY = y.reduce((a, b) => a + b, 0)
-  const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0)
-  const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0)
-  
-  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
-  return slope
-}
-
-function calculateGrowthRate(data: number[]): number {
-  if (data.length < 2) return 0
-  const first = data[0]
-  const last = data[data.length - 1]
-  return first === 0 ? 0 : ((last - first) / first) * 100
-}
-
-function calculateWeatherCorrelation(data: any[]): any {
-  // Implementation for weather correlation analysis
-  return {
-    temperature: calculatePearsonCorrelation(
-      data.map(row => row.temperature || 0),
-      data.map(row => parseFloat(row.total_revenue || 0))
-    ),
-    conditions: analyzeWeatherConditions(data)
-  }
-}
-
-function calculateDayOfWeekCorrelation(data: any[]): any {
-  const dayAverages = data.reduce((acc: any, row: any) => {
-    const day = row.day_of_week
-    if (!acc[day]) {
-      acc[day] = { total: 0, count: 0 }
+  try {
+    // Authentication check
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'AUTH_REQUIRED' },
+        { status: 401 }
+      )
     }
-    acc[day].total += parseFloat(row.total_revenue || 0)
-    acc[day].count += 1
-    return acc
-  }, {})
-  
-  Object.keys(dayAverages).forEach(day => {
-    dayAverages[day].average = dayAverages[day].total / dayAverages[day].count
-  })
-  
-  return dayAverages
-}
 
-function calculateEventsCorrelation(data: any[]): any {
-  const withEvents = data.filter(row => row.has_events)
-  const withoutEvents = data.filter(row => !row.has_events)
-  
-  const avgWithEvents = withEvents.reduce((sum, row) => sum + parseFloat(row.total_revenue || 0), 0) / withEvents.length
-  const avgWithoutEvents = withoutEvents.reduce((sum, row) => sum + parseFloat(row.total_revenue || 0), 0) / withoutEvents.length
-  
-  return {
-    withEvents: avgWithEvents || 0,
-    withoutEvents: avgWithoutEvents || 0,
-    difference: (avgWithEvents || 0) - (avgWithoutEvents || 0),
-    uplift: avgWithoutEvents === 0 ? 0 : ((avgWithEvents - avgWithoutEvents) / avgWithoutEvents) * 100
-  }
-}
-
-function generateCorrelationHeatmap(data: any[]): any {
-  // Generate heatmap data for day of week vs weather conditions
-  const heatmapData: any = {}
-  
-  data.forEach(row => {
-    const day = row.day_of_week
-    const weather = row.weather_condition || 'unknown'
-    
-    if (!heatmapData[day]) {
-      heatmapData[day] = {}
-    }
-    if (!heatmapData[day][weather]) {
-      heatmapData[day][weather] = { total: 0, count: 0 }
-    }
-    
-    heatmapData[day][weather].total += parseFloat(row.total_revenue || 0)
-    heatmapData[day][weather].count += 1
-  })
-  
-  // Calculate averages
-  Object.keys(heatmapData).forEach(day => {
-    Object.keys(heatmapData[day]).forEach(weather => {
-      heatmapData[day][weather].average = heatmapData[day][weather].total / heatmapData[day][weather].count
+    // Parse request body
+    const body = await request.json()
+    const batchRequestSchema = z.object({
+      queries: z.array(z.object({
+        id: z.string(),
+        type: z.enum(['dashboard', 'correlation', 'export']),
+        filters: z.object({
+          dateRange: z.object({
+            start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+          }),
+          storeIds: z.array(z.number()).optional(),
+          departments: z.array(z.string()).optional()
+        }),
+        priority: z.enum(['high', 'medium', 'low']).default('medium')
+      })).min(1).max(10), // Limit batch size
+      options: z.object({
+        enableCache: z.boolean().default(true),
+        enableCompression: z.boolean().default(true),
+        maxExecutionTime: z.number().min(5000).max(60000).default(30000)
+      }).optional()
     })
-  })
-  
-  return heatmapData
-}
 
-function analyzeWeatherConditions(data: any[]): any {
-  const conditions = data.reduce((acc: any, row: any) => {
-    const condition = row.weather_condition || 'unknown'
-    if (!acc[condition]) {
-      acc[condition] = { total: 0, count: 0 }
+    const validationResult = batchRequestSchema.safeParse(body)
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { 
+          error: 'Invalid batch request', 
+          details: validationResult.error.errors,
+          code: 'VALIDATION_ERROR'
+        },
+        { status: 400 }
+      )
     }
-    acc[condition].total += parseFloat(row.total_revenue || 0)
-    acc[condition].count += 1
-    return acc
-  }, {})
-  
-  Object.keys(conditions).forEach(condition => {
-    conditions[condition].average = conditions[condition].total / conditions[condition].count
-  })
-  
-  return conditions
-}
 
-function aggregateByWeek(data: any[]): any[] {
-  // Implementation for weekly aggregation
-  return []
-}
+    const { queries, options } = validationResult.data
 
-function aggregateByMonth(data: any[]): any[] {
-  // Implementation for monthly aggregation
-  return []
-}
+    // Execute batch queries with optimization
+    const batchStartTime = performance.now()
+    const batchResults = await analyticsOptimizer.batchOptimizedQueries(
+      queries.map(q => ({
+        type: q.type,
+        filters: q.filters,
+        priority: q.priority
+      }))
+    )
 
-function aggregatePeriodData(data: any[]): any {
-  return {
-    totalRevenue: data.reduce((sum, row) => sum + parseFloat(row.total_revenue_ex_tax || 0), 0),
-    totalFootfall: data.reduce((sum, row) => sum + (row.total_footfall || 0), 0),
-    totalTransactions: data.reduce((sum, row) => sum + (row.total_transactions || 0), 0)
-  }
-}
+    // Process results
+    const processedResults = Object.entries(batchResults).map(([key, result], index) => ({
+      id: queries[index]?.id || key,
+      success: true,
+      data: optimizeApiResponse(result.data, options),
+      metadata: {
+        executionTime: result.executionTime,
+        cacheHit: result.cached,
+        dataSize: result.metadata.dataSize
+      }
+    }))
 
-function calculateComparison(current: any[], previous: any[]): any {
-  const currentTotal = aggregatePeriodData(current)
-  const previousTotal = aggregatePeriodData(previous)
-  
-  return {
-    revenueGrowth: previousTotal.totalRevenue === 0 ? 0 : 
-      ((currentTotal.totalRevenue - previousTotal.totalRevenue) / previousTotal.totalRevenue) * 100,
-    footfallGrowth: previousTotal.totalFootfall === 0 ? 0 :
-      ((currentTotal.totalFootfall - previousTotal.totalFootfall) / previousTotal.totalFootfall) * 100,
-    transactionGrowth: previousTotal.totalTransactions === 0 ? 0 :
-      ((currentTotal.totalTransactions - previousTotal.totalTransactions) / previousTotal.totalTransactions) * 100
-  }
-}
+    const totalExecutionTime = performance.now() - batchStartTime
+    const overallResponseTime = performance.now() - startTime
 
-function calculatePreviousPeriodStart(currentStart: string): string {
-  const date = new Date(currentStart)
-  date.setDate(date.getDate() - 30) // 30 days earlier
-  return date.toISOString().split('T')[0]
-}
-
-function calculatePreviousPeriodEnd(currentEnd: string): string {
-  const date = new Date(currentEnd)
-  date.setDate(date.getDate() - 30) // 30 days earlier
-  return date.toISOString().split('T')[0]
-}
-
-/**
- * Log performance metrics for monitoring
- */
-async function logPerformanceMetrics(metrics: PerformanceMetrics, params: AnalyticsParams): Promise<void> {
-  try {
+    // Log batch audit event
     const supabase = createClient()
-    await supabase
-      .from('audit_log')
-      .insert({
-        actor_id: 'system',
-        action: 'api_analytics_performance',
-        target: 'analytics_api',
-        meta: {
-          ...metrics,
-          params,
-          timestamp: new Date().toISOString()
-        }
-      })
+    logAuditEvent(
+      supabase,
+      'analytics_batch',
+      'analytics_api_batch',
+      {
+        queryCount: queries.length,
+        totalExecutionTime,
+        overallResponseTime,
+        cacheStats: analyticsOptimizer.getCacheStats()
+      },
+      user.id
+    ).catch(console.error)
+
+    return NextResponse.json({
+      success: true,
+      results: processedResults,
+      metadata: {
+        batchSize: queries.length,
+        totalExecutionTime,
+        overallResponseTime,
+        cacheStats: analyticsOptimizer.getCacheStats(),
+        timestamp: new Date().toISOString()
+      }
+    }, {
+      headers: {
+        'X-Batch-Size': queries.length.toString(),
+        'X-Response-Time': Math.round(overallResponseTime).toString(),
+        'X-Total-Execution-Time': Math.round(totalExecutionTime).toString()
+      }
+    })
+
   } catch (error) {
-    console.warn('Failed to log performance metrics:', error)
-  }
-}
-
-/**
- * Log error metrics for monitoring
- */
-async function logErrorMetrics(error: any, metrics: PerformanceMetrics, requestId: string): Promise<void> {
-  try {
-    const supabase = createClient()
-    await supabase
-      .from('audit_log')
-      .insert({
-        actor_id: 'system',
-        action: 'api_analytics_error',
-        target: 'analytics_api',
-        meta: {
-          requestId,
-          error: error.message,
-          responseTime: metrics.responseTime,
+    console.error('Batch analytics API error:', error)
+    
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error',
+        code: 'BATCH_ERROR',
+        metadata: {
+          responseTime: performance.now() - startTime,
           timestamp: new Date().toISOString()
         }
-      })
-  } catch (logError) {
-    console.warn('Failed to log error metrics:', logError)
+      },
+      { status: 500 }
+    )
   }
 }
 
-// ISR configuration
-export const revalidate = 300 // 5 minutes
+// Export for edge runtime compatibility
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
