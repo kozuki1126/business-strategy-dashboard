@@ -70,7 +70,9 @@ export class DataSource {
   private readonly RETRY_DELAY = 2000 // 2 seconds
 
   constructor() {
-    console.log('[DataSource] Initializing external data source client')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DataSource] Initializing external data source client')
+    }
   }
 
   /**
@@ -78,7 +80,9 @@ export class DataSource {
    * Using Yahoo Finance API (free tier)
    */
   async fetchMarketData(): Promise<MarketData[]> {
-    console.log('[DataSource] Fetching market data...')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DataSource] Fetching market data...')
+    }
     
     const symbols = ['TOPIX', 'NIKKEI225', '7203.T', '6758.T', '9984.T'] // Toyota, Sony, SoftBank
     const results: MarketData[] = []
@@ -97,7 +101,9 @@ export class DataSource {
         results.push(mockData)
       }
 
-      console.log(`[DataSource] Market data: ${results.length} records fetched`)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[DataSource] Market data: ${results.length} records fetched`)
+      }
       return results
 
     } catch (error) {
@@ -111,7 +117,9 @@ export class DataSource {
    * Using ExchangeRate-API or similar free service
    */
   async fetchFXRates(): Promise<FXData[]> {
-    console.log('[DataSource] Fetching FX rates...')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DataSource] Fetching FX rates...')
+    }
     
     const pairs = ['USD/JPY', 'EUR/JPY', 'CNY/JPY']
     const results: FXData[] = []
@@ -132,7 +140,9 @@ export class DataSource {
         results.push(mockData)
       }
 
-      console.log(`[DataSource] FX rates: ${results.length} records fetched`)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[DataSource] FX rates: ${results.length} records fetched`)
+      }
       return results
 
     } catch (error) {
@@ -146,7 +156,9 @@ export class DataSource {
    * Using OpenWeatherMap API (free tier) or JMA (Japan Meteorological Agency)
    */
   async fetchWeatherData(): Promise<WeatherData[]> {
-    console.log('[DataSource] Fetching weather data...')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DataSource] Fetching weather data...')
+    }
     
     const locations = ['Tokyo', 'Osaka', 'Nagoya', 'Fukuoka', 'Sapporo']
     const results: WeatherData[] = []
@@ -168,7 +180,9 @@ export class DataSource {
         results.push(mockData)
       }
 
-      console.log(`[DataSource] Weather data: ${results.length} records fetched`)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[DataSource] Weather data: ${results.length} records fetched`)
+      }
       return results
 
     } catch (error) {
@@ -182,7 +196,9 @@ export class DataSource {
    * Using EventBrite API, Facebook Events, or local tourism APIs
    */
   async fetchEventsData(): Promise<EventData[]> {
-    console.log('[DataSource] Fetching events data...')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DataSource] Fetching events data...')
+    }
     
     const results: EventData[] = []
     const today = new Date()
@@ -214,7 +230,9 @@ export class DataSource {
         results.push(mockData)
       }
 
-      console.log(`[DataSource] Events data: ${results.length} records fetched`)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[DataSource] Events data: ${results.length} records fetched`)
+      }
       return results
 
     } catch (error) {
@@ -228,7 +246,9 @@ export class DataSource {
    * Using News API, RSS feeds, or tech news aggregators
    */
   async fetchSTEMNews(): Promise<STEMNewsData[]> {
-    console.log('[DataSource] Fetching STEM news...')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DataSource] Fetching STEM news...')
+    }
     
     const results: STEMNewsData[] = []
     const today = new Date().toISOString().split('T')[0]
@@ -254,7 +274,9 @@ export class DataSource {
         results.push(mockData)
       }
 
-      console.log(`[DataSource] STEM news: ${results.length} records fetched`)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[DataSource] STEM news: ${results.length} records fetched`)
+      }
       return results
 
     } catch (error) {
@@ -268,7 +290,9 @@ export class DataSource {
    * Using JNTO (Japan National Tourism Organization) API or government open data
    */
   async fetchInboundData(): Promise<InboundData[]> {
-    console.log('[DataSource] Fetching inbound tourism data...')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DataSource] Fetching inbound tourism data...')
+    }
     
     const results: InboundData[] = []
     const currentDate = new Date()
@@ -293,7 +317,9 @@ export class DataSource {
         }
       }
 
-      console.log(`[DataSource] Inbound data: ${results.length} records fetched`)
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[DataSource] Inbound data: ${results.length} records fetched`)
+      }
       return results
 
     } catch (error) {
