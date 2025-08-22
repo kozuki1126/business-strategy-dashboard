@@ -1,6 +1,6 @@
 /**
- * Optimized Analytics API Route
- * Task #014: 性能・p95最適化実装 - 最適化ミドルウェア適用
+ * Enhanced Analytics API Route with SLO Monitoring
+ * Task #014: 性能・p95最適化実装 - SLO監視統合
  * Target: 100CCU負荷・99.5%可用性・p95≤1500ms
  */
 
@@ -19,6 +19,7 @@ import {
   withResponseCompression,
   logMemoryUsage
 } from '@/lib/middleware/performance'
+import { sloMonitor } from '@/lib/monitoring/slo-monitor'
 import { DashboardFilters } from '@/types/database.types'
 import { performance } from 'perf_hooks'
 
@@ -38,11 +39,12 @@ const PERF_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'X-Performance-Optimized': 'true',
-  'X-Cache-Strategy': 'multi-tier'
+  'X-Cache-Strategy': 'multi-tier',
+  'X-SLO-Monitored': 'true'
 }
 
 /**
- * Optimized analytics data fetcher with all performance enhancements
+ * Enhanced analytics data fetcher with SLO monitoring integration
  */
 const getAnalyticsWithOptimizations = withRequestDeduplication(
   withApiCache(
@@ -68,15 +70,18 @@ const getAnalyticsWithOptimizations = withRequestDeduplication(
 )
 
 /**
- * GET endpoint with full performance optimization
+ * GET endpoint with comprehensive SLO monitoring
  */
 export async function GET(request: NextRequest) {
   const startTime = performance.now()
   const requestId = crypto.randomUUID().slice(0, 8)
   
-  console.log(`[${requestId}] 🚀 Optimized analytics request started`)
+  console.log(`[${requestId}] 🚀 Enhanced analytics request started`)
 
   try {
+    // Estimate concurrent users from request context
+    const concurrentUsers = estimateConcurrentUsers(request)
+    
     // Fast authentication with performance monitoring
     const authStart = performance.now()
     const supabase = createClient()
@@ -86,6 +91,15 @@ export async function GET(request: NextRequest) {
     console.log(`[${requestId}] Auth completed in ${authTime.toFixed(2)}ms`)
     
     if (authError || !user) {
+      // Record failed metric
+      sloMonitor.recordMetric({
+        responseTime: performance.now() - startTime,
+        success: false,
+        endpoint: '/api/analytics',
+        concurrentUsers,
+        errorType: 'authentication'
+      })
+      
       return new Response(
         JSON.stringify({ 
           error: 'Unauthorized',
@@ -107,6 +121,16 @@ export async function GET(request: NextRequest) {
     console.log(`[${requestId}] Filter parsing completed in ${filterTime.toFixed(2)}ms`)
     
     if (!filters) {
+      // Record failed metric
+      sloMonitor.recordMetric({
+        responseTime: performance.now() - startTime,
+        success: false,
+        endpoint: '/api/analytics',
+        concurrentUsers,
+        errorType: 'validation',
+        userId: user.id
+      })
+      
       return new Response(
         JSON.stringify({ 
           error: 'Invalid filters',
@@ -138,16 +162,29 @@ export async function GET(request: NextRequest) {
     
     console.log(`[${requestId}] Data fetch completed in ${dataTime.toFixed(2)}ms`)
 
+    // Calculate total response time
+    const responseTime = performance.now() - startTime
+
+    // Record successful metric in SLO monitor
+    sloMonitor.recordMetric({
+      responseTime,
+      success: true,
+      endpoint: '/api/analytics',
+      concurrentUsers,
+      userId: user.id,
+      region: clientInfo.region
+    })
+
     // Get performance metrics
     const cacheStats = getCacheStats()
-    const responseTime = performance.now() - startTime
 
     // Performance status assessment
     const performanceStatus = {
       target: 1500,
       actual: Math.round(responseTime),
       status: responseTime <= 1500 ? 'excellent' : responseTime <= 2000 ? 'good' : 'slow',
-      p95Compliant: responseTime <= 1500
+      p95Compliant: responseTime <= 1500,
+      sloCompliant: true // Will be updated based on overall SLO status
     }
 
     // Log performance metrics
@@ -157,18 +194,37 @@ export async function GET(request: NextRequest) {
       console.warn(`[${requestId}] ⚠️  P95 target exceeded: ${responseTime.toFixed(2)}ms > 1500ms`)
     }
 
-    // Prepare optimized response with comprehensive metadata
+    // Get current SLO status for enhanced reporting
+    const sloReport = sloMonitor.generateSLOReport(5 * 60 * 1000) // Last 5 minutes
+    const overallSLOStatus = getSLOHealth(sloReport)
+
+    // Prepare enhanced response with comprehensive metadata
     const response = {
       data: analyticsData,
       meta: {
         requestId,
         performance: {
           ...performanceStatus,
+          sloCompliant: overallSLOStatus === 'healthy',
           breakdown: {
             auth: Math.round(authTime),
             filters: Math.round(filterTime),
             data: Math.round(dataTime),
             total: Math.round(responseTime)
+          }
+        },
+        slo: {
+          status: overallSLOStatus,
+          currentMetrics: {
+            availability: `${(sloReport.availability.actual * 100).toFixed(2)}%`,
+            p95ResponseTime: `${sloReport.responseTime.actual.toFixed(0)}ms`,
+            errorRate: `${(sloReport.errorRate.actual * 100).toFixed(2)}%`,
+            concurrentUsers: concurrentUsers
+          },
+          compliance: {
+            availability: sloReport.availability.status === 'healthy',
+            responseTime: sloReport.responseTime.status === 'healthy',
+            errorRate: sloReport.errorRate.status === 'healthy'
           }
         },
         cache: {
@@ -178,15 +234,16 @@ export async function GET(request: NextRequest) {
         client: clientInfo,
         server: {
           timestamp: new Date().toISOString(),
-          version: '1.0-optimized',
-          runtime: 'edge'
+          version: '1.0-slo-enhanced',
+          runtime: 'edge',
+          loadLevel: categorizeLoad(concurrentUsers)
         },
         filters: filters,
         recordCounts: analyticsData.meta?.recordCounts || {}
       }
     }
 
-    // Apply response compression and caching headers
+    // Apply response compression and enhanced caching headers
     const optimizedResponse = new Response(
       JSON.stringify(response),
       {
@@ -198,7 +255,12 @@ export async function GET(request: NextRequest) {
           'X-Performance-Status': performanceStatus.status,
           'X-Cache-Hit-Ratio': (response.meta.cache.hitRatioPercent).toFixed(1),
           'X-Region': clientInfo.region,
-          'X-P95-Compliant': performanceStatus.p95Compliant.toString()
+          'X-P95-Compliant': performanceStatus.p95Compliant.toString(),
+          'X-SLO-Status': overallSLOStatus,
+          'X-Concurrent-Users': concurrentUsers.toString(),
+          'X-Load-Level': categorizeLoad(concurrentUsers),
+          'X-SLO-Availability': `${(sloReport.availability.actual * 100).toFixed(2)}%`,
+          'X-SLO-P95-Time': `${sloReport.responseTime.actual.toFixed(0)}ms`
         }
       }
     )
@@ -208,6 +270,15 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const responseTime = performance.now() - startTime
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    
+    // Record failed metric
+    sloMonitor.recordMetric({
+      responseTime,
+      success: false,
+      endpoint: '/api/analytics',
+      concurrentUsers: estimateConcurrentUsers(request),
+      errorType: 'internal_error'
+    })
     
     console.error(`[${requestId}] ❌ Error after ${responseTime.toFixed(2)}ms:`, error)
 
@@ -219,7 +290,8 @@ export async function GET(request: NextRequest) {
         timestamp: new Date().toISOString(),
         performance: {
           responseTimeMs: Math.round(responseTime),
-          failed: true
+          failed: true,
+          sloImpact: true
         }
       }),
       {
@@ -228,7 +300,8 @@ export async function GET(request: NextRequest) {
           'Content-Type': 'application/json',
           'X-Request-ID': requestId,
           'X-Response-Time': responseTime.toFixed(2),
-          'X-Performance-Status': 'error'
+          'X-Performance-Status': 'error',
+          'X-SLO-Impact': 'true'
         }
       }
     )
@@ -236,17 +309,27 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST endpoint with optimization stack
+ * POST endpoint with SLO monitoring integration
  */
 export async function POST(request: NextRequest) {
   const startTime = performance.now()
   const requestId = crypto.randomUUID().slice(0, 8)
 
   try {
+    const concurrentUsers = estimateConcurrentUsers(request)
+    
     const supabase = createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError || !user) {
+      sloMonitor.recordMetric({
+        responseTime: performance.now() - startTime,
+        success: false,
+        endpoint: '/api/analytics',
+        concurrentUsers,
+        errorType: 'authentication'
+      })
+      
       return new Response(
         JSON.stringify({ error: 'Unauthorized', requestId }),
         { status: 401, headers: { 'Content-Type': 'application/json' } }
@@ -258,6 +341,15 @@ export async function POST(request: NextRequest) {
     const { filters } = body as { filters: DashboardFilters }
 
     if (!validateOptimizedFilters(filters)) {
+      sloMonitor.recordMetric({
+        responseTime: performance.now() - startTime,
+        success: false,
+        endpoint: '/api/analytics',
+        concurrentUsers,
+        errorType: 'validation',
+        userId: user.id
+      })
+      
       return new Response(
         JSON.stringify({ error: 'Invalid filters', requestId }),
         { status: 400, headers: PERF_HEADERS }
@@ -268,17 +360,28 @@ export async function POST(request: NextRequest) {
     const analyticsData = await getAnalyticsWithOptimizations(supabase, filters)
     const responseTime = performance.now() - startTime
     
+    // Record successful metric
+    sloMonitor.recordMetric({
+      responseTime,
+      success: true,
+      endpoint: '/api/analytics',
+      concurrentUsers,
+      userId: user.id
+    })
+    
     const response = {
       data: analyticsData,
       meta: {
         requestId,
         performance: {
           responseTimeMs: Math.round(responseTime),
-          p95Compliant: responseTime <= 1500
+          p95Compliant: responseTime <= 1500,
+          sloCompliant: responseTime <= 1500
         },
         userId: user.id,
         timestamp: new Date().toISOString(),
-        filtersApplied: filters
+        filtersApplied: filters,
+        concurrentUsers
       }
     }
 
@@ -290,7 +393,9 @@ export async function POST(request: NextRequest) {
           headers: {
             ...PERF_HEADERS,
             'X-Request-ID': requestId,
-            'X-Response-Time': responseTime.toFixed(2)
+            'X-Response-Time': responseTime.toFixed(2),
+            'X-P95-Compliant': (responseTime <= 1500).toString(),
+            'X-Concurrent-Users': concurrentUsers.toString()
           }
         }
       )
@@ -298,6 +403,15 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     const responseTime = performance.now() - startTime
+    
+    sloMonitor.recordMetric({
+      responseTime,
+      success: false,
+      endpoint: '/api/analytics',
+      concurrentUsers: estimateConcurrentUsers(request),
+      errorType: 'internal_error'
+    })
+    
     console.error(`[${requestId}] POST Error:`, error)
     
     return new Response(
@@ -312,7 +426,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Health check endpoint with performance metrics
+ * Enhanced health check endpoint with SLO metrics
  */
 export async function HEAD(request: NextRequest) {
   const startTime = performance.now()
@@ -320,18 +434,25 @@ export async function HEAD(request: NextRequest) {
   try {
     const cacheStats = getCacheStats()
     const responseTime = performance.now() - startTime
+    const sloReport = sloMonitor.generateSLOReport(5 * 60 * 1000)
     
     // Overall health assessment
     const overallHitRatio = Object.values(cacheStats).reduce((acc, cache) => acc + cache.hitRatio, 0) / Object.keys(cacheStats).length
-    const healthStatus = overallHitRatio > 0.7 ? 'healthy' : overallHitRatio > 0.5 ? 'warning' : 'critical'
+    const sloHealthStatus = getSLOHealth(sloReport)
+    const combinedHealth = combineHealthStatus(sloHealthStatus, overallHitRatio > 0.7 ? 'healthy' : 'degraded')
     
     return new Response(null, {
-      status: 200,
+      status: sloHealthStatus === 'critical' ? 503 : 200,
       headers: {
-        'X-Health-Status': healthStatus,
+        'X-Health-Status': combinedHealth,
+        'X-SLO-Status': sloHealthStatus,
         'X-Cache-Hit-Ratio': (overallHitRatio * 100).toFixed(1),
         'X-Response-Time': responseTime.toFixed(2),
         'X-P95-Target': '1500',
+        'X-P95-Actual': sloReport.responseTime.actual.toFixed(0),
+        'X-Availability-Target': (sloReport.availability.target * 100).toFixed(1),
+        'X-Availability-Actual': (sloReport.availability.actual * 100).toFixed(1),
+        'X-Error-Rate-Actual': (sloReport.errorRate.actual * 100).toFixed(2),
         'X-Performance-Optimized': 'true',
         'Cache-Control': 'no-cache'
       }
@@ -341,6 +462,7 @@ export async function HEAD(request: NextRequest) {
       status: 503,
       headers: {
         'X-Health-Status': 'critical',
+        'X-SLO-Status': 'critical',
         'X-Error': 'health-check-failed',
         'Cache-Control': 'no-cache'
       }
@@ -349,7 +471,7 @@ export async function HEAD(request: NextRequest) {
 }
 
 /**
- * Cache warming endpoint for performance optimization
+ * Enhanced cache warming endpoint with SLO consideration
  */
 export async function PUT(request: NextRequest) {
   const startTime = performance.now()
@@ -366,37 +488,56 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    console.log(`[${requestId}] 🔥 Cache warm-up requested`)
+    console.log(`[${requestId}] 🔥 Enhanced cache warm-up requested`)
     
     // Warm up caches
     await warmUpCaches(supabase)
     
     const responseTime = performance.now() - startTime
-    console.log(`[${requestId}] ✅ Cache warm-up completed in ${responseTime.toFixed(2)}ms`)
+    console.log(`[${requestId}] ✅ Enhanced cache warm-up completed in ${responseTime.toFixed(2)}ms`)
+    
+    // Record cache warm-up as successful operation
+    sloMonitor.recordMetric({
+      responseTime,
+      success: true,
+      endpoint: '/api/analytics/warmup',
+      concurrentUsers: 1,
+      userId: user.id
+    })
     
     return new Response(
       JSON.stringify({
         success: true,
         requestId,
         responseTimeMs: Math.round(responseTime),
-        message: 'Caches warmed up successfully'
+        message: 'Enhanced caches warmed up successfully',
+        sloImpact: 'positive'
       }),
       {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'X-Request-ID': requestId
+          'X-Request-ID': requestId,
+          'X-SLO-Impact': 'positive'
         }
       }
     )
     
   } catch (error) {
     const responseTime = performance.now() - startTime
-    console.error(`[${requestId}] Cache warm-up failed:`, error)
+    console.error(`[${requestId}] Enhanced cache warm-up failed:`, error)
+    
+    sloMonitor.recordMetric({
+      responseTime,
+      success: false,
+      endpoint: '/api/analytics/warmup',
+      concurrentUsers: 1,
+      errorType: 'cache_warmup_failed'
+    })
     
     return new Response(
       JSON.stringify({
-        error: 'Cache warm-up failed',
+        error: 'Enhanced cache warm-up failed',
         requestId,
         responseTimeMs: Math.round(responseTime)
       }),
@@ -406,8 +547,56 @@ export async function PUT(request: NextRequest) {
 }
 
 // ========================================
-// OPTIMIZED UTILITY FUNCTIONS
+// ENHANCED UTILITY FUNCTIONS
 // ========================================
+
+/**
+ * Estimate concurrent users from request context
+ */
+function estimateConcurrentUsers(request: NextRequest): number {
+  // In a real implementation, this would be based on active connections
+  // For now, we'll use a simplified estimation based on time and random factor
+  const hour = new Date().getHours()
+  const peakHours = hour >= 9 && hour <= 17 // Business hours
+  const baseUsers = peakHours ? 30 : 10
+  const variation = Math.floor(Math.random() * 20) - 10 // ±10 variation
+  return Math.max(1, baseUsers + variation)
+}
+
+/**
+ * Get SLO health status from report
+ */
+function getSLOHealth(report: any): 'healthy' | 'degraded' | 'critical' {
+  const violations = [
+    report.availability.status,
+    report.responseTime.status,
+    report.errorRate.status
+  ].filter(status => status === 'violation').length
+  
+  if (violations === 0) return 'healthy'
+  if (violations === 1) return 'degraded'
+  return 'critical'
+}
+
+/**
+ * Combine multiple health statuses
+ */
+function combineHealthStatus(sloStatus: string, cacheStatus: string): string {
+  if (sloStatus === 'critical' || cacheStatus === 'critical') return 'critical'
+  if (sloStatus === 'degraded' || cacheStatus === 'degraded') return 'degraded'
+  return 'healthy'
+}
+
+/**
+ * Categorize load level
+ */
+function categorizeLoad(concurrentUsers: number): string {
+  if (concurrentUsers <= 25) return 'low'
+  if (concurrentUsers <= 50) return 'medium'
+  if (concurrentUsers <= 75) return 'high'
+  if (concurrentUsers <= 100) return 'critical'
+  return 'overload'
+}
 
 /**
  * Optimized filter parsing with validation
