@@ -1,411 +1,672 @@
 /**
- * SLO Monitoring System
- * Task #014: 性能・p95最適化実装 - SLO監視・アラート
- * 
- * Monitors: 99.5% availability, p95 ≤ 1500ms response time
+ * SLO Monitoring and Load Testing System
+ * Task #014: 性能・p95最適化実装
+ * Target: 100CCU負荷・99.5%可用性・p95≤1500ms
  */
 
-import { createClient } from '@/lib/supabase/server'
-import { NotificationService } from '@/lib/notifications/service'
+import { performance } from 'perf_hooks'
 
+// SLO定義
+export const SLO_TARGETS = {
+  AVAILABILITY: 0.995, // 99.5%
+  P95_RESPONSE_TIME: 1500, // 1500ms
+  MAX_CONCURRENT_USERS: 100,
+  ERROR_RATE_THRESHOLD: 0.01, // 1%
+  THROUGHPUT_TARGET: 50 // requests/second
+} as const
+
+// メトリクス収集
 interface SLOMetrics {
-  availability: number
-  p95ResponseTime: number
-  errorRate: number
-  throughput: number
-  timestamp: Date
-}
-
-interface SLOTarget {
-  availability: number
-  p95ResponseTime: number
-  errorRate: number
-  name: string
-}
-
-interface SLOViolation {
-  target: string
-  actual: number
-  expected: number
-  severity: 'warning' | 'critical'
-  timestamp: Date
-  duration: number
-  description: string
+  timestamp: number
+  responseTime: number
+  success: boolean
+  endpoint: string
+  concurrentUsers: number
+  errorType?: string
+  userId?: string
+  region?: string
 }
 
 class SLOMonitor {
-  private supabase = createClient()
-  private notificationService = new NotificationService()
+  private metrics: SLOMetrics[] = []
+  private alertCallbacks: ((alert: SLOAlert) => void)[] = []
+  private monitoringInterval?: NodeJS.Timeout
   
-  // SLO Targets
-  private targets: SLOTarget[] = [
-    {
-      name: 'High Availability',
-      availability: 99.5,
-      p95ResponseTime: 1500,
-      errorRate: 0.5
-    },
-    {
-      name: 'Performance',
-      availability: 99.0,
-      p95ResponseTime: 2000,
-      errorRate: 1.0
-    }
-  ]
-
-  private violationHistory: SLOViolation[] = []
-
-  /**
-   * Check current SLO status
-   */
-  async checkSLO(timeWindowMinutes: number = 60): Promise<{
-    metrics: SLOMetrics
-    violations: SLOViolation[]
-    status: 'healthy' | 'warning' | 'critical'
-  }> {
-    try {
-      // Get current metrics from database
-      const { data: sloData, error } = await this.supabase
-        .rpc('check_slo_compliance', { time_window_minutes: timeWindowMinutes })
-
-      if (error) {
-        console.error('SLO check failed:', error)
-        throw new Error(`SLO check failed: ${error.message}`)
-      }
-
-      const metrics: SLOMetrics = {
-        availability: sloData.metrics.availability,
-        p95ResponseTime: sloData.metrics.p95_response_time,
-        errorRate: sloData.metrics.error_rate,
-        throughput: 0, // Calculate from request count
-        timestamp: new Date()
-      }
-
-      // Check violations
-      const violations = this.detectViolations(metrics)
-      
-      // Determine overall status
-      const status = this.calculateStatus(violations)
-
-      // Handle violations
-      if (violations.length > 0) {
-        await this.handleViolations(violations, metrics)
-      }
-
-      return { metrics, violations, status }
-    } catch (error) {
-      console.error('SLO monitoring error:', error)
-      throw error
-    }
+  constructor() {
+    this.startMonitoring()
   }
 
   /**
-   * Detect SLO violations
+   * メトリクス記録
    */
-  private detectViolations(metrics: SLOMetrics): SLOViolation[] {
+  recordMetric(metric: Omit<SLOMetrics, 'timestamp'>) {
+    const fullMetric: SLOMetrics = {
+      ...metric,
+      timestamp: Date.now()
+    }
+    
+    this.metrics.push(fullMetric)
+    
+    // メモリ制限（直近1時間のデータのみ保持）
+    const oneHourAgo = Date.now() - 60 * 60 * 1000
+    this.metrics = this.metrics.filter(m => m.timestamp > oneHourAgo)
+    
+    // リアルタイムSLO評価
+    this.evaluateSLO(fullMetric)
+  }
+
+  /**
+   * リアルタイムSLO評価
+   */
+  private evaluateSLO(newMetric: SLOMetrics) {
+    const recent = this.getRecentMetrics(5 * 60 * 1000) // 直近5分
+    
+    if (recent.length < 10) return // 最小サンプル数
+    
+    const availability = this.calculateAvailability(recent)
+    const p95ResponseTime = this.calculateP95ResponseTime(recent)
+    const errorRate = this.calculateErrorRate(recent)
+    const avgConcurrentUsers = recent.reduce((acc, m) => acc + m.concurrentUsers, 0) / recent.length
+    
+    // SLO違反チェック
     const violations: SLOViolation[] = []
-    const primaryTarget = this.targets[0] // High Availability
-
-    // Check availability
-    if (metrics.availability < primaryTarget.availability) {
-      const severity = metrics.availability < 99.0 ? 'critical' : 'warning'
-      violations.push({
-        target: 'availability',
-        actual: metrics.availability,
-        expected: primaryTarget.availability,
-        severity,
-        timestamp: metrics.timestamp,
-        duration: 0, // Calculate in real implementation
-        description: `Availability ${metrics.availability.toFixed(2)}% is below target ${primaryTarget.availability}%`
-      })
-    }
-
-    // Check p95 response time
-    if (metrics.p95ResponseTime > primaryTarget.p95ResponseTime) {
-      const severity = metrics.p95ResponseTime > 3000 ? 'critical' : 'warning'
-      violations.push({
-        target: 'p95_response_time',
-        actual: metrics.p95ResponseTime,
-        expected: primaryTarget.p95ResponseTime,
-        severity,
-        timestamp: metrics.timestamp,
-        duration: 0,
-        description: `P95 response time ${metrics.p95ResponseTime.toFixed(0)}ms exceeds target ${primaryTarget.p95ResponseTime}ms`
-      })
-    }
-
-    // Check error rate
-    if (metrics.errorRate > primaryTarget.errorRate) {
-      const severity = metrics.errorRate > 2.0 ? 'critical' : 'warning'
-      violations.push({
-        target: 'error_rate',
-        actual: metrics.errorRate,
-        expected: primaryTarget.errorRate,
-        severity,
-        timestamp: metrics.timestamp,
-        duration: 0,
-        description: `Error rate ${metrics.errorRate.toFixed(2)}% exceeds target ${primaryTarget.errorRate}%`
-      })
-    }
-
-    return violations
-  }
-
-  /**
-   * Calculate overall system status
-   */
-  private calculateStatus(violations: SLOViolation[]): 'healthy' | 'warning' | 'critical' {
-    if (violations.length === 0) {
-      return 'healthy'
-    }
-
-    const hasCritical = violations.some(v => v.severity === 'critical')
-    return hasCritical ? 'critical' : 'warning'
-  }
-
-  /**
-   * Handle SLO violations
-   */
-  private async handleViolations(violations: SLOViolation[], metrics: SLOMetrics): Promise<void> {
-    // Add to violation history
-    this.violationHistory.push(...violations)
-
-    // Send notifications for new violations
-    for (const violation of violations) {
-      await this.sendViolationAlert(violation, metrics)
-    }
-
-    // Log violations for audit
-    for (const violation of violations) {
-      try {
-        await this.supabase
-          .from('audit_log')
-          .insert({
-            actor_id: 'system',
-            action: 'slo_violation',
-            target: 'slo_monitor',
-            meta: {
-              violation: violation,
-              metrics: metrics,
-              timestamp: new Date().toISOString()
-            }
-          })
-      } catch (error) {
-        console.error('Failed to log SLO violation:', error)
-      }
-    }
-  }
-
-  /**
-   * Send violation alert notification
-   */
-  private async sendViolationAlert(violation: SLOViolation, metrics: SLOMetrics): Promise<void> {
-    const subject = `🚨 SLO Violation: ${violation.target} (${violation.severity.toUpperCase()})`
     
-    const emailBody = `
-<h2>🚨 Service Level Objective Violation Detected</h2>
-
-<h3>Violation Details</h3>
-<ul>
-  <li><strong>Target:</strong> ${violation.target}</li>
-  <li><strong>Severity:</strong> ${violation.severity.toUpperCase()}</li>
-  <li><strong>Actual Value:</strong> ${this.formatMetricValue(violation.target, violation.actual)}</li>
-  <li><strong>Expected Value:</strong> ${this.formatMetricValue(violation.target, violation.expected)}</li>
-  <li><strong>Description:</strong> ${violation.description}</li>
-  <li><strong>Timestamp:</strong> ${violation.timestamp.toISOString()}</li>
-</ul>
-
-<h3>Current System Metrics</h3>
-<ul>
-  <li><strong>Availability:</strong> ${metrics.availability.toFixed(2)}% (Target: ≥99.5%)</li>
-  <li><strong>P95 Response Time:</strong> ${metrics.p95ResponseTime.toFixed(0)}ms (Target: ≤1500ms)</li>
-  <li><strong>Error Rate:</strong> ${metrics.errorRate.toFixed(2)}% (Target: ≤0.5%)</li>
-  <li><strong>Measured At:</strong> ${metrics.timestamp.toISOString()}</li>
-</ul>
-
-<h3>Recommended Actions</h3>
-${this.getRecommendedActions(violation)}
-
-<h3>Dashboard Links</h3>
-<ul>
-  <li><a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard">Performance Dashboard</a></li>
-  <li><a href="${process.env.NEXT_PUBLIC_APP_URL}/audit">Audit Logs</a></li>
-</ul>
-
-<p><em>This alert was generated automatically by the SLO monitoring system.</em></p>
-`
-
-    try {
-      await this.notificationService.sendAlert({
-        type: 'slo_violation',
-        severity: violation.severity,
-        subject,
-        htmlContent: emailBody,
-        recipients: process.env.EMAIL_RECIPIENTS_ALERTS?.split(',') || [],
-        metadata: {
-          violation,
-          metrics,
-          timestamp: new Date().toISOString()
+    if (availability < SLO_TARGETS.AVAILABILITY) {
+      violations.push({
+        type: 'availability',
+        target: SLO_TARGETS.AVAILABILITY,
+        actual: availability,
+        severity: availability < 0.99 ? 'critical' : 'warning'
+      })
+    }
+    
+    if (p95ResponseTime > SLO_TARGETS.P95_RESPONSE_TIME) {
+      violations.push({
+        type: 'response_time',
+        target: SLO_TARGETS.P95_RESPONSE_TIME,
+        actual: p95ResponseTime,
+        severity: p95ResponseTime > 3000 ? 'critical' : 'warning'
+      })
+    }
+    
+    if (errorRate > SLO_TARGETS.ERROR_RATE_THRESHOLD) {
+      violations.push({
+        type: 'error_rate',
+        target: SLO_TARGETS.ERROR_RATE_THRESHOLD,
+        actual: errorRate,
+        severity: errorRate > 0.05 ? 'critical' : 'warning'
+      })
+    }
+    
+    if (avgConcurrentUsers > SLO_TARGETS.MAX_CONCURRENT_USERS) {
+      violations.push({
+        type: 'concurrent_users',
+        target: SLO_TARGETS.MAX_CONCURRENT_USERS,
+        actual: avgConcurrentUsers,
+        severity: avgConcurrentUsers > 150 ? 'critical' : 'warning'
+      })
+    }
+    
+    // アラート送信
+    if (violations.length > 0) {
+      this.sendAlert({
+        timestamp: Date.now(),
+        violations,
+        context: {
+          totalMetrics: recent.length,
+          timeWindow: '5min',
+          currentMetric: newMetric
         }
       })
-
-      console.log(`✅ SLO violation alert sent for ${violation.target}`)
-    } catch (error) {
-      console.error('Failed to send SLO violation alert:', error)
     }
   }
 
   /**
-   * Format metric values for display
+   * 可用性計算
    */
-  private formatMetricValue(target: string, value: number): string {
-    switch (target) {
-      case 'availability':
-        return `${value.toFixed(2)}%`
-      case 'p95_response_time':
-        return `${value.toFixed(0)}ms`
-      case 'error_rate':
-        return `${value.toFixed(2)}%`
-      default:
-        return value.toString()
-    }
+  private calculateAvailability(metrics: SLOMetrics[]): number {
+    const total = metrics.length
+    const successful = metrics.filter(m => m.success).length
+    return total > 0 ? successful / total : 1
   }
 
   /**
-   * Get recommended actions for violation type
+   * P95応答時間計算
    */
-  private getRecommendedActions(violation: SLOViolation): string {
-    const actions: { [key: string]: string[] } = {
-      availability: [
-        'Check server health and resource utilization',
-        'Review recent deployments and rollback if necessary',
-        'Verify database connectivity and performance',
-        'Check for DDoS attacks or unusual traffic patterns',
-        'Scale up infrastructure if needed'
-      ],
-      p95_response_time: [
-        'Check for slow database queries',
-        'Review cache hit rates and optimize caching',
-        'Check for memory leaks or resource exhaustion',
-        'Optimize API endpoints and database indexes',
-        'Consider horizontal scaling of application servers'
-      ],
-      error_rate: [
-        'Review application logs for error patterns',
-        'Check for recent code changes that might cause errors',
-        'Verify third-party service availability',
-        'Check database connection pool status',
-        'Review input validation and error handling'
-      ]
-    }
-
-    const targetActions = actions[violation.target] || ['Review system logs and metrics']
+  private calculateP95ResponseTime(metrics: SLOMetrics[]): number {
+    const responseTimes = metrics
+      .filter(m => m.success)
+      .map(m => m.responseTime)
+      .sort((a, b) => a - b)
     
-    return `
-<ol>
-  ${targetActions.map(action => `<li>${action}</li>`).join('')}
-</ol>
-`
+    if (responseTimes.length === 0) return 0
+    
+    const p95Index = Math.ceil(responseTimes.length * 0.95) - 1
+    return responseTimes[p95Index] || 0
   }
 
   /**
-   * Get SLO compliance report
+   * エラー率計算
    */
-  async generateComplianceReport(days: number = 7): Promise<{
-    summary: {
-      overallCompliance: number
-      availabilityCompliance: number
-      performanceCompliance: number
-      totalViolations: number
+  private calculateErrorRate(metrics: SLOMetrics[]): number {
+    const total = metrics.length
+    const errors = metrics.filter(m => !m.success).length
+    return total > 0 ? errors / total : 0
+  }
+
+  /**
+   * 期間内メトリクス取得
+   */
+  private getRecentMetrics(windowMs: number): SLOMetrics[] {
+    const cutoff = Date.now() - windowMs
+    return this.metrics.filter(m => m.timestamp > cutoff)
+  }
+
+  /**
+   * SLOサマリーレポート生成
+   */
+  generateSLOReport(periodMs: number = 24 * 60 * 60 * 1000): SLOReport {
+    const metrics = this.getRecentMetrics(periodMs)
+    
+    if (metrics.length === 0) {
+      return {
+        period: '24h',
+        timestamp: Date.now(),
+        availability: { target: SLO_TARGETS.AVAILABILITY, actual: 1, status: 'healthy' },
+        responseTime: { target: SLO_TARGETS.P95_RESPONSE_TIME, actual: 0, status: 'healthy' },
+        errorRate: { target: SLO_TARGETS.ERROR_RATE_THRESHOLD, actual: 0, status: 'healthy' },
+        concurrentUsers: { target: SLO_TARGETS.MAX_CONCURRENT_USERS, actual: 0, status: 'healthy' },
+        totalRequests: 0,
+        endpoints: {},
+        recommendations: []
+      }
     }
-    violations: SLOViolation[]
-    trends: {
-      availability: number[]
-      p95ResponseTime: number[]
-      errorRate: number[]
+
+    const availability = this.calculateAvailability(metrics)
+    const p95ResponseTime = this.calculateP95ResponseTime(metrics)
+    const errorRate = this.calculateErrorRate(metrics)
+    const maxConcurrentUsers = Math.max(...metrics.map(m => m.concurrentUsers))
+    
+    // エンドポイント別統計
+    const endpointStats: Record<string, EndpointStats> = {}
+    metrics.forEach(m => {
+      if (!endpointStats[m.endpoint]) {
+        endpointStats[m.endpoint] = {
+          requests: 0,
+          errors: 0,
+          totalResponseTime: 0,
+          maxResponseTime: 0,
+          minResponseTime: Infinity
+        }
+      }
+      
+      const stat = endpointStats[m.endpoint]
+      stat.requests++
+      if (!m.success) stat.errors++
+      stat.totalResponseTime += m.responseTime
+      stat.maxResponseTime = Math.max(stat.maxResponseTime, m.responseTime)
+      stat.minResponseTime = Math.min(stat.minResponseTime, m.responseTime)
+    })
+
+    // 改善提案生成
+    const recommendations: string[] = []
+    if (availability < SLO_TARGETS.AVAILABILITY) {
+      recommendations.push('可用性改善: エラーハンドリング強化、冗長化検討')
     }
-  }> {
-    // In real implementation, query historical data from database
-    const report = {
-      summary: {
-        overallCompliance: 99.2,
-        availabilityCompliance: 99.7,
-        performanceCompliance: 98.5,
-        totalViolations: this.violationHistory.length
+    if (p95ResponseTime > SLO_TARGETS.P95_RESPONSE_TIME) {
+      recommendations.push('応答時間改善: キャッシュ最適化、クエリ最適化、CDN活用')
+    }
+    if (errorRate > SLO_TARGETS.ERROR_RATE_THRESHOLD) {
+      recommendations.push('エラー率改善: バリデーション強化、リトライロジック追加')
+    }
+    if (maxConcurrentUsers > SLO_TARGETS.MAX_CONCURRENT_USERS * 0.8) {
+      recommendations.push('スケーリング検討: 負荷分散、オートスケーリング設定')
+    }
+
+    return {
+      period: '24h',
+      timestamp: Date.now(),
+      availability: {
+        target: SLO_TARGETS.AVAILABILITY,
+        actual: availability,
+        status: availability >= SLO_TARGETS.AVAILABILITY ? 'healthy' : 'violation'
       },
-      violations: this.violationHistory.slice(-50), // Last 50 violations
-      trends: {
-        availability: [99.8, 99.6, 99.5, 99.9, 99.3, 99.7, 99.8],
-        p95ResponseTime: [1200, 1450, 1600, 1300, 1800, 1400, 1350],
-        errorRate: [0.2, 0.3, 0.8, 0.1, 1.2, 0.4, 0.3]
-      }
+      responseTime: {
+        target: SLO_TARGETS.P95_RESPONSE_TIME,
+        actual: p95ResponseTime,
+        status: p95ResponseTime <= SLO_TARGETS.P95_RESPONSE_TIME ? 'healthy' : 'violation'
+      },
+      errorRate: {
+        target: SLO_TARGETS.ERROR_RATE_THRESHOLD,
+        actual: errorRate,
+        status: errorRate <= SLO_TARGETS.ERROR_RATE_THRESHOLD ? 'healthy' : 'violation'
+      },
+      concurrentUsers: {
+        target: SLO_TARGETS.MAX_CONCURRENT_USERS,
+        actual: maxConcurrentUsers,
+        status: maxConcurrentUsers <= SLO_TARGETS.MAX_CONCURRENT_USERS ? 'healthy' : 'violation'
+      },
+      totalRequests: metrics.length,
+      endpoints: endpointStats,
+      recommendations
     }
-
-    return report
   }
 
   /**
-   * Start continuous monitoring
+   * 負荷テストシナリオ実行
    */
-  startMonitoring(intervalMinutes: number = 5): void {
-    console.log(`🔍 Starting SLO monitoring with ${intervalMinutes}min interval`)
+  async runLoadTest(scenario: LoadTestScenario): Promise<LoadTestResult> {
+    console.log(`🧪 負荷テスト開始: ${scenario.name}`)
     
-    setInterval(async () => {
-      try {
-        const result = await this.checkSLO()
-        console.log(`📊 SLO Check: ${result.status} (${result.violations.length} violations)`)
-        
-        if (result.violations.length > 0) {
-          console.log('⚠️  Violations:', result.violations.map(v => v.target).join(', '))
-        }
-      } catch (error) {
-        console.error('SLO monitoring check failed:', error)
-      }
-    }, intervalMinutes * 60 * 1000)
-  }
-
-  /**
-   * Get current violation count for dashboard
-   */
-  getCurrentViolations(): SLOViolation[] {
-    const now = new Date()
-    const recentThreshold = new Date(now.getTime() - 60 * 60 * 1000) // Last hour
+    const startTime = Date.now()
+    const results: LoadTestMetric[] = []
+    const errors: string[] = []
     
-    return this.violationHistory.filter(v => v.timestamp > recentThreshold)
-  }
-
-  /**
-   * Generate SLO status for health check endpoint
-   */
-  async getHealthStatus(): Promise<{
-    status: 'healthy' | 'degraded' | 'unhealthy'
-    slo_met: boolean
-    last_check: Date
-    violations_count: number
-  }> {
     try {
-      const result = await this.checkSLO(15) // 15 minute window
+      // 段階的負荷増加
+      for (let phase = 0; phase < scenario.phases.length; phase++) {
+        const phaseConfig = scenario.phases[phase]
+        console.log(`📈 Phase ${phase + 1}: ${phaseConfig.concurrentUsers} users for ${phaseConfig.durationMs}ms`)
+        
+        const phaseResults = await this.executeLoadTestPhase(phaseConfig)
+        results.push(...phaseResults)
+        
+        // フェーズ間の休憩
+        if (phase < scenario.phases.length - 1 && scenario.phases[phase + 1].rampUpMs) {
+          await this.sleep(scenario.phases[phase + 1].rampUpMs!)
+        }
+      }
+      
+    } catch (error) {
+      errors.push(`Load test execution failed: ${error}`)
+    }
+    
+    const duration = Date.now() - startTime
+    
+    // 結果分析
+    const analysis = this.analyzeLoadTestResults(results)
+    
+    console.log(`✅ 負荷テスト完了: ${duration}ms`)
+    
+    return {
+      scenario: scenario.name,
+      duration,
+      totalRequests: results.length,
+      successfulRequests: results.filter(r => r.success).length,
+      failedRequests: results.filter(r => !r.success).length,
+      averageResponseTime: analysis.averageResponseTime,
+      p95ResponseTime: analysis.p95ResponseTime,
+      p99ResponseTime: analysis.p99ResponseTime,
+      maxResponseTime: analysis.maxResponseTime,
+      minResponseTime: analysis.minResponseTime,
+      throughput: results.length / (duration / 1000),
+      errorRate: analysis.errorRate,
+      sloCompliance: {
+        availability: analysis.availability >= SLO_TARGETS.AVAILABILITY,
+        responseTime: analysis.p95ResponseTime <= SLO_TARGETS.P95_RESPONSE_TIME,
+        errorRate: analysis.errorRate <= SLO_TARGETS.ERROR_RATE_THRESHOLD
+      },
+      errors,
+      recommendation: this.generateLoadTestRecommendations(analysis)
+    }
+  }
+
+  /**
+   * 負荷テストフェーズ実行
+   */
+  private async executeLoadTestPhase(phase: LoadTestPhase): Promise<LoadTestMetric[]> {
+    const results: LoadTestMetric[] = []
+    const startTime = Date.now()
+    const endTime = startTime + phase.durationMs
+    
+    // 同時実行プロミス管理
+    const activeRequests = new Set<Promise<LoadTestMetric>>()
+    
+    while (Date.now() < endTime) {
+      // 同時実行数制御
+      if (activeRequests.size < phase.concurrentUsers) {
+        const requestPromise = this.simulateUserRequest(phase.endpoints)
+        activeRequests.add(requestPromise)
+        
+        requestPromise
+          .then(result => {
+            results.push(result)
+            activeRequests.delete(requestPromise)
+          })
+          .catch(error => {
+            results.push({
+              timestamp: Date.now(),
+              responseTime: 0,
+              success: false,
+              endpoint: 'unknown',
+              error: error.message
+            })
+            activeRequests.delete(requestPromise)
+          })
+      }
+      
+      // 要求間隔調整
+      await this.sleep(phase.requestIntervalMs || 100)
+    }
+    
+    // 残りのリクエスト完了待機
+    await Promise.allSettled(Array.from(activeRequests))
+    
+    return results
+  }
+
+  /**
+   * ユーザーリクエストシミュレーション
+   */
+  private async simulateUserRequest(endpoints: string[]): Promise<LoadTestMetric> {
+    const endpoint = endpoints[Math.floor(Math.random() * endpoints.length)]
+    const startTime = performance.now()
+    
+    try {
+      // Next.js APIエンドポイントの場合、内部的にテスト
+      const response = await this.makeTestRequest(endpoint)
+      const responseTime = performance.now() - startTime
       
       return {
-        status: result.status === 'healthy' ? 'healthy' : 
-                result.status === 'warning' ? 'degraded' : 'unhealthy',
-        slo_met: result.violations.length === 0,
-        last_check: result.metrics.timestamp,
-        violations_count: result.violations.length
+        timestamp: Date.now(),
+        responseTime,
+        success: response.ok,
+        endpoint,
+        statusCode: response.status
       }
+      
     } catch (error) {
+      const responseTime = performance.now() - startTime
       return {
-        status: 'unhealthy',
-        slo_met: false,
-        last_check: new Date(),
-        violations_count: -1
+        timestamp: Date.now(),
+        responseTime,
+        success: false,
+        endpoint,
+        error: error instanceof Error ? error.message : 'Unknown error'
       }
     }
+  }
+
+  /**
+   * テストリクエスト実行（内部API用）
+   */
+  private async makeTestRequest(endpoint: string): Promise<Response> {
+    // 本来はここで実際のHTTPリクエストを送信
+    // この例では簡略化してシミュレーション
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    const url = `${baseUrl}${endpoint}`
+    
+    return fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'SLO-LoadTest/1.0'
+      }
+    })
+  }
+
+  /**
+   * 負荷テスト結果分析
+   */
+  private analyzeLoadTestResults(results: LoadTestMetric[]): LoadTestAnalysis {
+    if (results.length === 0) {
+      return {
+        averageResponseTime: 0,
+        p95ResponseTime: 0,
+        p99ResponseTime: 0,
+        maxResponseTime: 0,
+        minResponseTime: 0,
+        errorRate: 0,
+        availability: 1
+      }
+    }
+
+    const successfulResults = results.filter(r => r.success)
+    const responseTimes = successfulResults.map(r => r.responseTime).sort((a, b) => a - b)
+    
+    const p95Index = Math.ceil(responseTimes.length * 0.95) - 1
+    const p99Index = Math.ceil(responseTimes.length * 0.99) - 1
+    
+    return {
+      averageResponseTime: responseTimes.reduce((acc, time) => acc + time, 0) / responseTimes.length,
+      p95ResponseTime: responseTimes[p95Index] || 0,
+      p99ResponseTime: responseTimes[p99Index] || 0,
+      maxResponseTime: Math.max(...responseTimes, 0),
+      minResponseTime: Math.min(...responseTimes, Infinity),
+      errorRate: (results.length - successfulResults.length) / results.length,
+      availability: successfulResults.length / results.length
+    }
+  }
+
+  /**
+   * 負荷テスト推奨事項生成
+   */
+  private generateLoadTestRecommendations(analysis: LoadTestAnalysis): string[] {
+    const recommendations: string[] = []
+    
+    if (analysis.p95ResponseTime > SLO_TARGETS.P95_RESPONSE_TIME) {
+      recommendations.push(`P95応答時間が目標値${SLO_TARGETS.P95_RESPONSE_TIME}msを超過(${analysis.p95ResponseTime.toFixed(0)}ms): データベースクエリ最適化、キャッシュ戦略見直しを推奨`)
+    }
+    
+    if (analysis.availability < SLO_TARGETS.AVAILABILITY) {
+      recommendations.push(`可用性が目標値${(SLO_TARGETS.AVAILABILITY * 100).toFixed(1)}%を下回る(${(analysis.availability * 100).toFixed(1)}%): エラーハンドリング強化、冗長化設計を推奨`)
+    }
+    
+    if (analysis.errorRate > SLO_TARGETS.ERROR_RATE_THRESHOLD) {
+      recommendations.push(`エラー率が目標値${(SLO_TARGETS.ERROR_RATE_THRESHOLD * 100).toFixed(1)}%を超過(${(analysis.errorRate * 100).toFixed(1)}%): バリデーション強化、リトライロジック追加を推奨`)
+    }
+    
+    if (analysis.p95ResponseTime <= SLO_TARGETS.P95_RESPONSE_TIME && analysis.availability >= SLO_TARGETS.AVAILABILITY) {
+      recommendations.push('✅ 全SLO目標達成: 現在のパフォーマンス水準を維持')
+    }
+    
+    return recommendations
+  }
+
+  /**
+   * アラート送信
+   */
+  private sendAlert(alert: SLOAlert) {
+    console.warn('🚨 SLO Alert:', alert)
+    this.alertCallbacks.forEach(callback => {
+      try {
+        callback(alert)
+      } catch (error) {
+        console.error('Alert callback failed:', error)
+      }
+    })
+  }
+
+  /**
+   * アラートハンドラー登録
+   */
+  onAlert(callback: (alert: SLOAlert) => void) {
+    this.alertCallbacks.push(callback)
+  }
+
+  /**
+   * 監視開始
+   */
+  private startMonitoring() {
+    this.monitoringInterval = setInterval(() => {
+      // 定期的なヘルスチェック
+      this.performPeriodicHealthCheck()
+    }, 60 * 1000) // 1分間隔
+  }
+
+  /**
+   * 定期ヘルスチェック
+   */
+  private performPeriodicHealthCheck() {
+    const recentMetrics = this.getRecentMetrics(5 * 60 * 1000)
+    if (recentMetrics.length === 0) return
+    
+    const report = this.generateSLOReport(5 * 60 * 1000)
+    
+    console.log(`📊 SLO Health Check:`, {
+      availability: `${(report.availability.actual * 100).toFixed(2)}%`,
+      p95ResponseTime: `${report.responseTime.actual.toFixed(0)}ms`,
+      errorRate: `${(report.errorRate.actual * 100).toFixed(2)}%`,
+      requests: report.totalRequests
+    })
+  }
+
+  /**
+   * 監視停止
+   */
+  stopMonitoring() {
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval)
+      this.monitoringInterval = undefined
+    }
+  }
+
+  /**
+   * ユーティリティ: スリープ
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
   }
 }
 
-// Singleton instance for application use
+// 型定義
+interface SLOViolation {
+  type: 'availability' | 'response_time' | 'error_rate' | 'concurrent_users'
+  target: number
+  actual: number
+  severity: 'warning' | 'critical'
+}
+
+interface SLOAlert {
+  timestamp: number
+  violations: SLOViolation[]
+  context: {
+    totalMetrics: number
+    timeWindow: string
+    currentMetric: SLOMetrics
+  }
+}
+
+interface SLOReport {
+  period: string
+  timestamp: number
+  availability: { target: number; actual: number; status: 'healthy' | 'violation' }
+  responseTime: { target: number; actual: number; status: 'healthy' | 'violation' }
+  errorRate: { target: number; actual: number; status: 'healthy' | 'violation' }
+  concurrentUsers: { target: number; actual: number; status: 'healthy' | 'violation' }
+  totalRequests: number
+  endpoints: Record<string, EndpointStats>
+  recommendations: string[]
+}
+
+interface EndpointStats {
+  requests: number
+  errors: number
+  totalResponseTime: number
+  maxResponseTime: number
+  minResponseTime: number
+}
+
+interface LoadTestScenario {
+  name: string
+  phases: LoadTestPhase[]
+}
+
+interface LoadTestPhase {
+  concurrentUsers: number
+  durationMs: number
+  endpoints: string[]
+  requestIntervalMs?: number
+  rampUpMs?: number
+}
+
+interface LoadTestMetric {
+  timestamp: number
+  responseTime: number
+  success: boolean
+  endpoint: string
+  statusCode?: number
+  error?: string
+}
+
+interface LoadTestResult {
+  scenario: string
+  duration: number
+  totalRequests: number
+  successfulRequests: number
+  failedRequests: number
+  averageResponseTime: number
+  p95ResponseTime: number
+  p99ResponseTime: number
+  maxResponseTime: number
+  minResponseTime: number
+  throughput: number
+  errorRate: number
+  sloCompliance: {
+    availability: boolean
+    responseTime: boolean
+    errorRate: boolean
+  }
+  errors: string[]
+  recommendation: string[]
+}
+
+interface LoadTestAnalysis {
+  averageResponseTime: number
+  p95ResponseTime: number
+  p99ResponseTime: number
+  maxResponseTime: number
+  minResponseTime: number
+  errorRate: number
+  availability: number
+}
+
+// エクスポート
 export const sloMonitor = new SLOMonitor()
 
-// Export class for testing
-export { SLOMonitor, SLOMetrics, SLOViolation }
+// 定義済み負荷テストシナリオ
+export const LOAD_TEST_SCENARIOS: Record<string, LoadTestScenario> = {
+  BASIC_100CCU: {
+    name: 'Basic 100 Concurrent Users',
+    phases: [
+      {
+        concurrentUsers: 25,
+        durationMs: 30 * 1000,
+        endpoints: ['/api/analytics', '/api/sales'],
+        requestIntervalMs: 200,
+        rampUpMs: 5000
+      },
+      {
+        concurrentUsers: 50,
+        durationMs: 60 * 1000,
+        endpoints: ['/api/analytics', '/api/sales', '/api/export'],
+        requestIntervalMs: 150,
+        rampUpMs: 10000
+      },
+      {
+        concurrentUsers: 100,
+        durationMs: 120 * 1000,
+        endpoints: ['/api/analytics', '/api/sales', '/api/export', '/api/audit'],
+        requestIntervalMs: 100
+      }
+    ]
+  },
+  STRESS_150CCU: {
+    name: 'Stress Test 150 Concurrent Users',
+    phases: [
+      {
+        concurrentUsers: 100,
+        durationMs: 60 * 1000,
+        endpoints: ['/api/analytics'],
+        requestIntervalMs: 100,
+        rampUpMs: 10000
+      },
+      {
+        concurrentUsers: 150,
+        durationMs: 180 * 1000,
+        endpoints: ['/api/analytics', '/api/sales', '/api/export', '/api/audit'],
+        requestIntervalMs: 50
+      }
+    ]
+  }
+}
