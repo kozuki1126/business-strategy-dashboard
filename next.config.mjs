@@ -16,9 +16,7 @@ const nextConfig = {
     // Enable React Compiler for better performance
     reactCompiler: true,
 
-    // Enable partial pre-rendering for faster page loads
-    ppr: true,
-
+  // ppr は canary 限定。安定版では無効化
     // Optimize package imports for smaller bundles
     optimizePackageImports: [
       'recharts',
