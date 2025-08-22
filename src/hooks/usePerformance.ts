@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { getAnalyticsData, logAuditEvent } from '@/lib/database/helpers'
+import { getAnalyticsData } from '@/lib/database/helpers'
 import { DashboardFilters, AnalyticsData } from '@/types/database.types'
 
 // Performance monitoring hook
