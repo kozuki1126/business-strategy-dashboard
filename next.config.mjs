@@ -24,21 +24,18 @@ const nextConfig = {
       'recharts',
       'date-fns',
       'lucide-react'
-    ],
-
-    // Optimize server components
-    serverComponentsExternalPackages: [
-      'sharp',
-      'canvas'
     ]
   },
+
+  // Next 15+: externalize specific server deps at top-level (moved from experimental)
+  serverExternalPackages: [
+    'sharp',
+    'canvas'
+  ],
 
   // ==========================================
   // BUILD OPTIMIZATIONS
   // ==========================================
-
-  // Enable SWC minification for better performance
-  swcMinify: true,
 
   // Optimize output for production
   output: 'standalone',
@@ -60,9 +57,6 @@ const nextConfig = {
     // Optimize image sizes for dashboard
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-
-    // Quality for different use cases
-    quality: 75,
 
     // Enable image optimization
     minimumCacheTTL: 86400, // 24 hours
@@ -88,60 +82,33 @@ const nextConfig = {
         source: '/(.*)',
         headers: [
           // Security headers
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY'
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff'
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin'
-          },
-          {
-            key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()'
-          }
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' }
         ]
       },
       {
         // API routes performance headers
         source: '/api/(.*)',
         headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=300, stale-while-revalidate=600'
-          },
-          {
-            key: 'X-DNS-Prefetch-Control',
-            value: 'on'
-          }
+          { key: 'Cache-Control', value: 'public, max-age=300, stale-while-revalidate=600' },
+          { key: 'X-DNS-Prefetch-Control', value: 'on' }
         ]
       },
       {
         // Static assets long-term caching
         source: '/static/(.*)',
         headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable'
-          }
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }
         ]
       },
       {
         // Dashboard assets optimization
         source: '/(dashboard|analytics|sales|export|audit)',
         headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=600, stale-while-revalidate=1200'
-          },
-          {
-            key: 'X-Preload',
-            value: 'prefetch'
-          }
+          { key: 'Cache-Control', value: 'public, max-age=600, stale-while-revalidate=1200' },
+          { key: 'X-Preload', value: 'prefetch' }
         ]
       }
     ]
@@ -153,29 +120,15 @@ const nextConfig = {
 
   async redirects() {
     return [
-      {
-        source: '/admin',
-        destination: '/dashboard',
-        permanent: false
-      },
-      {
-        source: '/login',
-        destination: '/auth',
-        permanent: false
-      }
+      { source: '/admin', destination: '/dashboard', permanent: false },
+      { source: '/login', destination: '/auth', permanent: false }
     ]
   },
 
   async rewrites() {
     return [
-      {
-        source: '/health',
-        destination: '/api/health'
-      },
-      {
-        source: '/metrics',
-        destination: '/api/monitoring/metrics'
-      }
+      { source: '/health', destination: '/api/health' },
+      { source: '/metrics', destination: '/api/monitoring/metrics' }
     ]
   },
 
@@ -195,11 +148,7 @@ const nextConfig = {
         splitChunks: {
           chunks: 'all',
           cacheGroups: {
-            default: {
-              minChunks: 2,
-              priority: -20,
-              reuseExistingChunk: true
-            },
+            default: { minChunks: 2, priority: -20, reuseExistingChunk: true },
             vendor: {
               test: /[\\/]node_modules[\\/]/,
               name: 'vendors',
@@ -252,9 +201,7 @@ const nextConfig = {
 
   compiler: {
     // Remove console.log in production
-    removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn']
-    } : false,
+    removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
 
     // Enable styled-components if needed
     styledComponents: false
@@ -313,20 +260,6 @@ const nextConfig = {
   },
 
   // ==========================================
-  // API CONFIGURATION
-  // ==========================================
-
-  // API routes configuration
-  api: {
-    // Increase body size limit for exports
-    bodyParser: {
-      sizeLimit: '10mb'
-    },
-    // Response timeout for long operations
-    responseLimit: '50mb'
-  },
-
-  // ==========================================
   // MONITORING CONFIGURATION
   // ==========================================
 
@@ -335,18 +268,9 @@ const nextConfig = {
 
   // Optimize for performance
   modularizeImports: {
-    'recharts': {
-      transform: 'recharts/lib/{{member}}',
-      preventFullImport: true
-    },
-    'date-fns': {
-      transform: 'date-fns/{{member}}',
-      preventFullImport: true
-    },
-    'lucide-react': {
-      transform: 'lucide-react/dist/esm/icons/{{kebabCase member}}',
-      preventFullImport: true
-    }
+    'recharts': { transform: 'recharts/lib/{{member}}', preventFullImport: true },
+    'date-fns': { transform: 'date-fns/{{member}}', preventFullImport: true },
+    'lucide-react': { transform: 'lucide-react/dist/esm/icons/{{kebabCase member}}', preventFullImport: true }
   }
 }
 
