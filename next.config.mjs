@@ -81,7 +81,6 @@ const nextConfig = {
       {
         source: '/(.*)',
         headers: [
-          // Security headers
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
@@ -89,7 +88,6 @@ const nextConfig = {
         ]
       },
       {
-        // API routes performance headers
         source: '/api/(.*)',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=300, stale-while-revalidate=600' },
@@ -97,14 +95,12 @@ const nextConfig = {
         ]
       },
       {
-        // Static assets long-term caching
         source: '/static/(.*)',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }
         ]
       },
       {
-        // Dashboard assets optimization
         source: '/(dashboard|analytics|sales|export|audit)',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=600, stale-while-revalidate=1200' },
@@ -137,48 +133,23 @@ const nextConfig = {
   // ==========================================
 
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Production optimizations
     if (!dev) {
-      // Enable source maps for debugging in production
       config.devtool = 'source-map'
-
-      // Optimize bundle splitting
       config.optimization = {
         ...config.optimization,
         splitChunks: {
           chunks: 'all',
           cacheGroups: {
             default: { minChunks: 2, priority: -20, reuseExistingChunk: true },
-            vendor: {
-              test: /[\\/]node_modules[\\/]/,
-              name: 'vendors',
-              priority: -10,
-              chunks: 'all'
-            },
-            react: {
-              test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
-              name: 'react',
-              priority: 20,
-              chunks: 'all'
-            },
-            recharts: {
-              test: /[\\/]node_modules[\\/]recharts[\\/]/,
-              name: 'recharts',
-              priority: 15,
-              chunks: 'all'
-            },
-            supabase: {
-              test: /[\\/]node_modules[\\/]@supabase[\\/]/,
-              name: 'supabase',
-              priority: 15,
-              chunks: 'all'
-            }
+            vendor: { test: /[\\/]node_modules[\\/]/, name: 'vendors', priority: -10, chunks: 'all' },
+            react: { test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/, name: 'react', priority: 20, chunks: 'all' },
+            recharts: { test: /[\\/]node_modules[\\/]recharts[\\/]/, name: 'recharts', priority: 15, chunks: 'all' },
+            supabase: { test: /[\\/]node_modules[\\/]@supabase[\\/]/, name: 'supabase', priority: 15, chunks: 'all' }
           }
         }
       }
     }
 
-    // Performance monitoring
     config.plugins.push(
       new webpack.DefinePlugin({
         'process.env.BUILD_ID': JSON.stringify(buildId),
@@ -186,7 +157,6 @@ const nextConfig = {
       })
     )
 
-    // Optimize imports
     config.resolve.alias = {
       ...config.resolve.alias,
       '@': require('path').resolve(__dirname, 'src')
@@ -200,10 +170,7 @@ const nextConfig = {
   // ==========================================
 
   compiler: {
-    // Remove console.log in production
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
-
-    // Enable styled-components if needed
     styledComponents: false
   },
 
@@ -212,7 +179,6 @@ const nextConfig = {
   // ==========================================
 
   typescript: {
-    // Type checking optimizations
     tsconfigPath: './tsconfig.json',
     ignoreBuildErrors: false
   },
@@ -222,7 +188,6 @@ const nextConfig = {
   // ==========================================
 
   eslint: {
-    // Strict linting for production builds
     ignoreDuringBuilds: false,
     dirs: ['src', 'pages', 'app']
   },
@@ -232,11 +197,8 @@ const nextConfig = {
   // ==========================================
 
   env: {
-    // Performance monitoring flags
     ENABLE_PERFORMANCE_MONITORING: process.env.ENABLE_PERFORMANCE_MONITORING || 'true',
     ENABLE_SLO_MONITORING: process.env.ENABLE_SLO_MONITORING || 'true',
-
-    // Build-time constants
     BUILD_TIME: new Date().toISOString(),
     NEXT_PUBLIC_BUILD_TIME: new Date().toISOString()
   },
@@ -245,12 +207,9 @@ const nextConfig = {
   // DEPLOYMENT CONFIGURATION
   // ==========================================
 
-  // Enable tracing for debugging
   trailingSlash: false,
 
-  // Generate build ID for cache busting
   generateBuildId: async () => {
-    // Use git commit hash or timestamp
     const { execSync } = require('child_process')
     try {
       return execSync('git rev-parse HEAD').toString().trim()
@@ -263,10 +222,8 @@ const nextConfig = {
   // MONITORING CONFIGURATION
   // ==========================================
 
-  // Enable detailed build information
-  productionBrowserSourceMaps: false, // Disable for security in production
+  productionBrowserSourceMaps: false,
 
-  // Optimize for performance
   modularizeImports: {
     'recharts': { transform: 'recharts/lib/{{member}}', preventFullImport: true },
     'date-fns': { transform: 'date-fns/{{member}}', preventFullImport: true },
