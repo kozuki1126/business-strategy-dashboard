@@ -3,35 +3,28 @@
  * Optimized for 100CCU Load and 99.5% Availability
  */
 
-import { NextConfig } from 'next'
+const nextConfig = {
+  // Enable React strict mode for better development checks
+  reactStrictMode: true,
 
-const nextConfig: NextConfig = {
   // ==========================================
   // PERFORMANCE OPTIMIZATIONS
   // ==========================================
-  
+
   // Experimental features for performance
   experimental: {
     // Enable React Compiler for better performance
     reactCompiler: true,
-    
+
     // Enable partial pre-rendering for faster page loads
     ppr: true,
-    
+
     // Optimize package imports for smaller bundles
     optimizePackageImports: [
       'recharts',
       'date-fns',
       'lucide-react'
     ],
-
-    // Turbo mode for faster builds
-    turbo: {
-      rules: {
-        '*.ts': ['ts-loader'],
-        '*.tsx': ['ts-loader']
-      }
-    },
 
     // Optimize server components
     serverComponentsExternalPackages: [
@@ -43,7 +36,7 @@ const nextConfig: NextConfig = {
   // ==========================================
   // BUILD OPTIMIZATIONS
   // ==========================================
-  
+
   // Enable SWC minification for better performance
   swcMinify: true,
 
@@ -59,21 +52,21 @@ const nextConfig: NextConfig = {
   // ==========================================
   // IMAGE OPTIMIZATIONS
   // ==========================================
-  
+
   images: {
     // Enable modern image formats
     formats: ['image/webp', 'image/avif'],
-    
+
     // Optimize image sizes for dashboard
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    
+
     // Quality for different use cases
     quality: 75,
-    
+
     // Enable image optimization
     minimumCacheTTL: 86400, // 24 hours
-    
+
     // Domains for external images
     domains: [
       'images.unsplash.com',
@@ -88,7 +81,7 @@ const nextConfig: NextConfig = {
   // ==========================================
   // HEADERS AND SECURITY
   // ==========================================
-  
+
   async headers() {
     return [
       {
@@ -157,7 +150,7 @@ const nextConfig: NextConfig = {
   // ==========================================
   // REDIRECTS AND REWRITES
   // ==========================================
-  
+
   async redirects() {
     return [
       {
@@ -189,7 +182,7 @@ const nextConfig: NextConfig = {
   // ==========================================
   // WEBPACK OPTIMIZATIONS
   // ==========================================
-  
+
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     // Production optimizations
     if (!dev) {
@@ -234,20 +227,6 @@ const nextConfig: NextConfig = {
           }
         }
       }
-
-      // Bundle analyzer in production builds
-      if (process.env.ANALYZE === 'true') {
-        const { BundleAnalyzerPlugin } = require('@next/bundle-analyzer')()
-        config.plugins.push(
-          new BundleAnalyzerPlugin({
-            analyzerMode: 'static',
-            reportFilename: isServer 
-              ? '../analyze/server.html' 
-              : './analyze/client.html',
-            openAnalyzer: false
-          })
-        )
-      }
     }
 
     // Performance monitoring
@@ -270,7 +249,7 @@ const nextConfig: NextConfig = {
   // ==========================================
   // COMPILER OPTIONS
   // ==========================================
-  
+
   compiler: {
     // Remove console.log in production
     removeConsole: process.env.NODE_ENV === 'production' ? {
@@ -278,16 +257,13 @@ const nextConfig: NextConfig = {
     } : false,
 
     // Enable styled-components if needed
-    styledComponents: false,
-
-    // React strict mode for better development
-    reactStrictMode: true
+    styledComponents: false
   },
 
   // ==========================================
   // TYPESCRIPT CONFIGURATION
   // ==========================================
-  
+
   typescript: {
     // Type checking optimizations
     tsconfigPath: './tsconfig.json',
@@ -297,7 +273,7 @@ const nextConfig: NextConfig = {
   // ==========================================
   // ESLint CONFIGURATION
   // ==========================================
-  
+
   eslint: {
     // Strict linting for production builds
     ignoreDuringBuilds: false,
@@ -307,12 +283,12 @@ const nextConfig: NextConfig = {
   // ==========================================
   // ENVIRONMENT CONFIGURATION
   // ==========================================
-  
+
   env: {
     // Performance monitoring flags
     ENABLE_PERFORMANCE_MONITORING: process.env.ENABLE_PERFORMANCE_MONITORING || 'true',
     ENABLE_SLO_MONITORING: process.env.ENABLE_SLO_MONITORING || 'true',
-    
+
     // Build-time constants
     BUILD_TIME: new Date().toISOString(),
     NEXT_PUBLIC_BUILD_TIME: new Date().toISOString()
@@ -321,9 +297,6 @@ const nextConfig: NextConfig = {
   // ==========================================
   // DEPLOYMENT CONFIGURATION
   // ==========================================
-  
-  // Deployment target
-  target: 'server',
 
   // Enable tracing for debugging
   trailingSlash: false,
@@ -342,7 +315,7 @@ const nextConfig: NextConfig = {
   // ==========================================
   // API CONFIGURATION
   // ==========================================
-  
+
   // API routes configuration
   api: {
     // Increase body size limit for exports
@@ -356,10 +329,10 @@ const nextConfig: NextConfig = {
   // ==========================================
   // MONITORING CONFIGURATION
   // ==========================================
-  
+
   // Enable detailed build information
   productionBrowserSourceMaps: false, // Disable for security in production
-  
+
   // Optimize for performance
   modularizeImports: {
     'recharts': {
