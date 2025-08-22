@@ -50,7 +50,9 @@ export class ETLService {
     const startTime = Date.now()
     const results: ETLResult[] = []
 
-    console.log('[ETL] Starting full ETL pipeline...')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[ETL] Starting full ETL pipeline...')
+    }
 
     // Define data sources to process
     const dataSources = [
@@ -65,7 +67,9 @@ export class ETLService {
     // Process each data source
     for (const source of dataSources) {
       try {
-        console.log(`[ETL] Processing ${source.name}...`)
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[ETL] Processing ${source.name}...`)
+        }
         const result = await this.executeWithRetry(source.handler, source.name)
         results.push(result)
       } catch (error) {
@@ -84,7 +88,9 @@ export class ETLService {
     const successCount = results.filter(r => r.success).length
     const failureCount = results.length - successCount
 
-    console.log(`[ETL] Pipeline completed: ${successCount}/${results.length} sources successful`)
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[ETL] Pipeline completed: ${successCount}/${results.length} sources successful`)
+    }
 
     return {
       totalDuration,
@@ -106,7 +112,9 @@ export class ETLService {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        console.log(`[ETL] ${sourceName} - Attempt ${attempt}/${maxRetries}`)
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[ETL] ${sourceName} - Attempt ${attempt}/${maxRetries}`)
+        }
         return await handler()
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown error')
@@ -115,7 +123,9 @@ export class ETLService {
         if (attempt < maxRetries) {
           // Exponential backoff: 2s, 4s, 8s
           const delay = Math.pow(2, attempt) * 1000
-          console.log(`[ETL] ${sourceName} - Retrying in ${delay}ms...`)
+          if (process.env.NODE_ENV === 'development') {
+            console.warn(`[ETL] ${sourceName} - Retrying in ${delay}ms...`)
+          }
           await new Promise(resolve => setTimeout(resolve, delay))
         }
       }
