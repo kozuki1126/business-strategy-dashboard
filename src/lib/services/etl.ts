@@ -13,9 +13,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import { Database } from '@/types/database.types'
 import { DataSource } from './data-sources'
-import { AuditService } from './audit'
 
 type SupabaseClient = ReturnType<typeof createClient>
 
