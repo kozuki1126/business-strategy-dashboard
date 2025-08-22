@@ -1,323 +1,380 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  // Next.js 15.5.0 最適化設定
+/**
+ * Next.js Production Configuration for Task #014
+ * Optimized for 100CCU Load and 99.5% Availability
+ */
+
+import { NextConfig } from 'next'
+
+const nextConfig: NextConfig = {
+  // ==========================================
+  // PERFORMANCE OPTIMIZATIONS
+  // ==========================================
+  
+  // Experimental features for performance
   experimental: {
-    optimizePackageImports: ['recharts', 'lucide-react', '@supabase/supabase-js'],
-    optimizeServerReact: true,
-    serverMinification: true,
-    serverSourceMaps: false,
+    // Enable React Compiler for better performance
+    reactCompiler: true,
     
-    // Advanced caching - ISR settings moved to Route Handler level
-    staleTimes: {
-      dynamic: 30, // 30 seconds for dynamic content
-      static: 300, // 5 minutes for static content
+    // Enable partial pre-rendering for faster page loads
+    ppr: true,
+    
+    // Optimize package imports for smaller bundles
+    optimizePackageImports: [
+      'recharts',
+      'date-fns',
+      'lucide-react'
+    ],
+
+    // Turbo mode for faster builds
+    turbo: {
+      rules: {
+        '*.ts': ['ts-loader'],
+        '*.tsx': ['ts-loader']
+      }
     },
-    
-    // Performance optimizations
-    webVitalsAttribution: ['CLS', 'LCP', 'FCP', 'TTFB', 'FID'],
-    
-    // Bundle optimizations
-    optimizeCss: true,
-  },
-  
-  // Turbopack configuration (moved from experimental.turbo)
-  turbopack: {
-    rules: {
-      '*.svg': {
-        loaders: ['@svgr/webpack'],
-        as: '*.js',
-      },
-    }
-  },
-  
-  // React設定
-  reactStrictMode: true,
-  
-  // PWA準備 - Service Worker設定
-  async rewrites() {
-    return [
-      {
-        source: '/sw.js',
-        destination: '/_next/static/sw.js',
-      },
+
+    // Optimize server components
+    serverComponentsExternalPackages: [
+      'sharp',
+      'canvas'
     ]
   },
+
+  // ==========================================
+  // BUILD OPTIMIZATIONS
+  // ==========================================
   
-  // 画像最適化強化
+  // Enable SWC minification for better performance
+  swcMinify: true,
+
+  // Optimize output for production
+  output: 'standalone',
+
+  // Enable gzip compression
+  compress: true,
+
+  // PoweredBy header removal for security
+  poweredByHeader: false,
+
+  // ==========================================
+  // IMAGE OPTIMIZATIONS
+  // ==========================================
+  
   images: {
-    domains: [],
+    // Enable modern image formats
     formats: ['image/webp', 'image/avif'],
-    minimumCacheTTL: 3600, // 1 hour cache
+    
+    // Optimize image sizes for dashboard
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    unoptimized: false,
-    dangerouslyAllowSVG: false,
-    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
     
-    // Advanced image optimization
+    // Quality for different use cases
+    quality: 75,
+    
+    // Enable image optimization
+    minimumCacheTTL: 86400, // 24 hours
+    
+    // Domains for external images
+    domains: [
+      'images.unsplash.com',
+      'avatars.githubusercontent.com'
+    ],
+
+    // Loader configuration for optimal delivery
     loader: 'default',
-    path: '/_next/image',
-    loaderFile: '',
-    disableStaticImages: false,
+    path: '/_next/image/'
   },
+
+  // ==========================================
+  // HEADERS AND SECURITY
+  // ==========================================
   
-  // セキュリティヘッダー強化
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: [
-          {
-            key: 'X-DNS-Prefetch-Control',
-            value: 'on'
-          },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
-          },
+          // Security headers
           {
             key: 'X-Frame-Options',
-            value: 'DENY',
+            value: 'DENY'
           },
           {
             key: 'X-Content-Type-Options',
-            value: 'nosniff',
+            value: 'nosniff'
           },
           {
             key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',
-          },
-          {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
+            value: 'strict-origin-when-cross-origin'
           },
           {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()'
           }
-        ],
+        ]
       },
-      // 静的アセットの長期キャッシュ
       {
-        source: '/_next/static/:path*',
+        // API routes performance headers
+        source: '/api/(.*)',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
+            value: 'public, max-age=300, stale-while-revalidate=600'
           },
-        ],
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'on'
+          }
+        ]
       },
-      // API レスポンスのキャッシュ最適化
       {
-        source: '/api/:path*',
+        // Static assets long-term caching
+        source: '/static/(.*)',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'public, s-maxage=300, stale-while-revalidate=600',
-          },
-          {
-            key: 'CDN-Cache-Control',
-            value: 'max-age=300',
-          },
-          {
-            key: 'Vary',
-            value: 'Accept-Encoding, Authorization',
-          },
-        ],
+            value: 'public, max-age=31536000, immutable'
+          }
+        ]
       },
-    ];
-  },
-  
-  // パフォーマンス最適化強化
-  compiler: {
-    removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn']
-    } : false,
-    reactRemoveProperties: process.env.NODE_ENV === 'production',
-    
-    // Styled-components optimization
-    styledComponents: true,
-    
-    // Bundle analyzer integration
-    ...(process.env.ANALYZE === 'true' && {
-      bundleAnalyzer: {
-        enabled: true,
-        openAnalyzer: false,
+      {
+        // Dashboard assets optimization
+        source: '/(dashboard|analytics|sales|export|audit)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=600, stale-while-revalidate=1200'
+          },
+          {
+            key: 'X-Preload',
+            value: 'prefetch'
+          }
+        ]
       }
-    }),
+    ]
   },
+
+  // ==========================================
+  // REDIRECTS AND REWRITES
+  // ==========================================
   
-  // 出力設定最適化
-  output: 'standalone',
-  generateEtags: true,
-  poweredByHeader: false,
-  compress: true,
+  async redirects() {
+    return [
+      {
+        source: '/admin',
+        destination: '/dashboard',
+        permanent: false
+      },
+      {
+        source: '/login',
+        destination: '/auth',
+        permanent: false
+      }
+    ]
+  },
+
+  async rewrites() {
+    return [
+      {
+        source: '/health',
+        destination: '/api/health'
+      },
+      {
+        source: '/metrics',
+        destination: '/api/monitoring/metrics'
+      }
+    ]
+  },
+
+  // ==========================================
+  // WEBPACK OPTIMIZATIONS
+  // ==========================================
   
-  // Webpack設定高度最適化 - Next.js 15完全対応版
-  webpack: (config, { isServer, dev }) => {
-    // Production最適化
+  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    // Production optimizations
     if (!dev) {
+      // Enable source maps for debugging in production
+      config.devtool = 'source-map'
+
+      // Optimize bundle splitting
       config.optimization = {
         ...config.optimization,
-        
-        // Tree shaking強化
-        usedExports: true,
-        sideEffects: false,
-        
-        // Bundle splitting最適化
         splitChunks: {
           chunks: 'all',
           cacheGroups: {
-            default: false,
-            vendors: false,
-            
-            // Framework bundle
-            framework: {
-              name: 'framework',
-              chunks: 'all',
-              test: /[\\/]node_modules[\\/](react|react-dom|scheduler|prop-types|use-subscription)[\\/]/,
-              priority: 40,
-              enforce: true,
-            },
-            
-            // Commons bundle for shared modules
-            commons: {
-              name: 'commons',
-              chunks: 'all',
+            default: {
               minChunks: 2,
-              priority: 20,
-              reuseExistingChunk: true,
-              enforce: true,
+              priority: -20,
+              reuseExistingChunk: true
             },
-            
-            // Lib bundle for third-party libraries
-            lib: {
-              name: 'lib',
-              chunks: 'all',
+            vendor: {
               test: /[\\/]node_modules[\\/]/,
-              priority: 10,
-              minChunks: 1,
-              reuseExistingChunk: true,
+              name: 'vendors',
+              priority: -10,
+              chunks: 'all'
             },
-            
-            // Charts bundle (heavy dependencies)
-            charts: {
-              name: 'charts',
-              chunks: 'all',
-              test: /[\\/]node_modules[\\/](recharts|echarts)[\\/]/,
-              priority: 30,
-              enforce: true,
+            react: {
+              test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+              name: 'react',
+              priority: 20,
+              chunks: 'all'
             },
-            
-            // Supabase bundle
+            recharts: {
+              test: /[\\/]node_modules[\\/]recharts[\\/]/,
+              name: 'recharts',
+              priority: 15,
+              chunks: 'all'
+            },
             supabase: {
-              name: 'supabase',
-              chunks: 'all',
               test: /[\\/]node_modules[\\/]@supabase[\\/]/,
-              priority: 25,
-              enforce: true,
-            },
-          },
-        },
-        
-        // ✅ Next.js 15デフォルトの最適化を使用（カスタムTerserPlugin削除）
-        minimize: true,
-        // カスタムminimizerは削除 - Next.js 15の内蔵最適化を使用
+              name: 'supabase',
+              priority: 15,
+              chunks: 'all'
+            }
+          }
+        }
       }
-      
-      // Memory leak prevention
-      config.optimization.runtimeChunk = {
-        name: 'runtime',
-      }
-    }
-    
-    // Server-side optimizations
-    if (isServer) {
-      config.optimization = {
-        ...config.optimization,
-        concatenateModules: true,
+
+      // Bundle analyzer in production builds
+      if (process.env.ANALYZE === 'true') {
+        const { BundleAnalyzerPlugin } = require('@next/bundle-analyzer')()
+        config.plugins.push(
+          new BundleAnalyzerPlugin({
+            analyzerMode: 'static',
+            reportFilename: isServer 
+              ? '../analyze/server.html' 
+              : './analyze/client.html',
+            openAnalyzer: false
+          })
+        )
       }
     }
-    
-    // Bundle analysis
-    if (process.env.ANALYZE === 'true') {
-      const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer')
-      config.plugins.push(
-        new BundleAnalyzerPlugin({
-          analyzerMode: 'static',
-          openAnalyzer: false,
-          reportFilename: isServer
-            ? '../analyze/server.html'
-            : './analyze/client.html',
-        })
-      )
-    }
-    
-    // Module optimization
-    config.module.rules.push(
-      {
-        test: /\.svg$/,
-        use: ['@svgr/webpack'],
-      }
+
+    // Performance monitoring
+    config.plugins.push(
+      new webpack.DefinePlugin({
+        'process.env.BUILD_ID': JSON.stringify(buildId),
+        'process.env.BUILD_TIME': JSON.stringify(new Date().toISOString())
+      })
     )
-    
-    // Performance hints
-    if (!dev) {
-      config.performance = {
-        hints: 'warning',
-        maxEntrypointSize: 400000, // 400KB
-        maxAssetSize: 400000, // 400KB
-      }
+
+    // Optimize imports
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': require('path').resolve(__dirname, 'src')
     }
-    
+
     return config
   },
+
+  // ==========================================
+  // COMPILER OPTIONS
+  // ==========================================
   
-  // Production optimizations
-  ...(process.env.NODE_ENV === 'production' && {
-    cleanDistDir: true,
-    
-    // Disable development features
-    reactStrictMode: false, // Can cause double renders
-    
-    // Advanced production optimizations
-    productionBrowserSourceMaps: false,
-    modularizeImports: {
-      'lucide-react': {
-        transform: 'lucide-react/dist/esm/icons/{{member}}',
-      },
-      '@supabase/supabase-js': {
-        transform: '@supabase/supabase-js/dist/main/{{member}}',
-        skipDefaultConversion: true,
-      },
-    },
-  }),
+  compiler: {
+    // Remove console.log in production
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn']
+    } : false,
+
+    // Enable styled-components if needed
+    styledComponents: false,
+
+    // React strict mode for better development
+    reactStrictMode: true
+  },
+
+  // ==========================================
+  // TYPESCRIPT CONFIGURATION
+  // ==========================================
   
-  // Development optimizations
-  ...(process.env.NODE_ENV === 'development' && {
-    reactStrictMode: true,
+  typescript: {
+    // Type checking optimizations
+    tsconfigPath: './tsconfig.json',
+    ignoreBuildErrors: false
+  },
+
+  // ==========================================
+  // ESLint CONFIGURATION
+  // ==========================================
+  
+  eslint: {
+    // Strict linting for production builds
+    ignoreDuringBuilds: false,
+    dirs: ['src', 'pages', 'app']
+  },
+
+  // ==========================================
+  // ENVIRONMENT CONFIGURATION
+  // ==========================================
+  
+  env: {
+    // Performance monitoring flags
+    ENABLE_PERFORMANCE_MONITORING: process.env.ENABLE_PERFORMANCE_MONITORING || 'true',
+    ENABLE_SLO_MONITORING: process.env.ENABLE_SLO_MONITORING || 'true',
     
-    // Fast refresh optimization
-    fastRefresh: true,
-    
-    // Development mode specific settings
-    onDemandEntries: {
-      maxInactiveAge: 60 * 1000, // 1 minute
-      pagesBufferLength: 5,
+    // Build-time constants
+    BUILD_TIME: new Date().toISOString(),
+    NEXT_PUBLIC_BUILD_TIME: new Date().toISOString()
+  },
+
+  // ==========================================
+  // DEPLOYMENT CONFIGURATION
+  // ==========================================
+  
+  // Deployment target
+  target: 'server',
+
+  // Enable tracing for debugging
+  trailingSlash: false,
+
+  // Generate build ID for cache busting
+  generateBuildId: async () => {
+    // Use git commit hash or timestamp
+    const { execSync } = require('child_process')
+    try {
+      return execSync('git rev-parse HEAD').toString().trim()
+    } catch {
+      return Date.now().toString()
+    }
+  },
+
+  // ==========================================
+  // API CONFIGURATION
+  // ==========================================
+  
+  // API routes configuration
+  api: {
+    // Increase body size limit for exports
+    bodyParser: {
+      sizeLimit: '10mb'
     },
-    
-    // Source map optimization for development
-    productionBrowserSourceMaps: false,
-    
-    // Webpack dev server optimization
-    webpackDevMiddleware: config => {
-      config.watchOptions = {
-        poll: 1000,
-        aggregateTimeout: 300,
-      }
-      return config
+    // Response timeout for long operations
+    responseLimit: '50mb'
+  },
+
+  // ==========================================
+  // MONITORING CONFIGURATION
+  // ==========================================
+  
+  // Enable detailed build information
+  productionBrowserSourceMaps: false, // Disable for security in production
+  
+  // Optimize for performance
+  modularizeImports: {
+    'recharts': {
+      transform: 'recharts/lib/{{member}}',
+      preventFullImport: true
     },
-  }),
+    'date-fns': {
+      transform: 'date-fns/{{member}}',
+      preventFullImport: true
+    },
+    'lucide-react': {
+      transform: 'lucide-react/dist/esm/icons/{{kebabCase member}}',
+      preventFullImport: true
+    }
+  }
 }
 
 export default nextConfig
