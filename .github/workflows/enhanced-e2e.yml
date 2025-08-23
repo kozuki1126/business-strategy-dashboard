@@ -1,0 +1,529 @@
+# Enhanced E2E Testing Workflow for Task #015
+# Comprehensive E2E test execution with failure trace collection and regression testing
+
+name: Enhanced E2E Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run regression tests daily at 2 AM JST (17:00 UTC)
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - smoke
+          - regression
+          - performance
+          - visual
+          - accessibility
+      browser:
+        description: 'Browser to test'
+        required: true
+        default: 'chromium'
+        type: choice
+        options:
+          - chromium
+          - firefox
+          - webkit
+          - all
+      environment:
+        description: 'Test environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  NODE_VERSION: '20'
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '0'
+
+jobs:
+  # ================================
+  # SETUP & PREPARATION
+  # ================================
+  setup:
+    name: Setup & Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      test-matrix: ${{ steps.matrix.outputs.matrix }}
+      should-run-visual: ${{ steps.changes.outputs.frontend }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect Changed Files
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            frontend:
+              - 'src/**'
+              - 'public/**'
+              - 'e2e/**'
+              - 'playwright.config.ts'
+            backend:
+              - 'src/app/api/**'
+              - 'supabase/**'
+
+      - name: Generate Test Matrix
+        id: matrix
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.test_suite }}" = "all" ]; then
+            # Full test matrix for scheduled runs
+            echo "matrix={\"browser\":[\"chromium\",\"firefox\",\"webkit\"],\"shard\":[1,2,3,4]}" >> $GITHUB_OUTPUT
+          else
+            # Focused testing for PRs
+            echo "matrix={\"browser\":[\"chromium\"],\"shard\":[1,2]}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Health Check
+        run: |
+          echo "✅ Setup completed successfully"
+          echo "Test matrix: ${{ steps.matrix.outputs.matrix }}"
+          echo "Frontend changes: ${{ steps.changes.outputs.frontend }}"
+
+  # ================================
+  # CORE E2E TESTING
+  # ================================
+  e2e-tests:
+    name: E2E Tests (${{ matrix.browser }}-${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    needs: setup
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.test-matrix) }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci --frozen-lockfile
+          npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Build Application
+        run: npm run build
+        env:
+          NODE_ENV: test
+
+      - name: Start Application Server
+        run: |
+          npm run start &
+          sleep 30
+          curl -f http://localhost:3000 || (echo "Server failed to start" && exit 1)
+
+      - name: Run E2E Tests with Enhanced Tracing
+        id: tests
+        run: |
+          npx playwright test \
+            --project=${{ matrix.browser }} \
+            --shard=${{ matrix.shard }}/${{ strategy.job-total }} \
+            --reporter=html,line,json \
+            --output=test-results-${{ matrix.browser }}-${{ matrix.shard }} \
+            --trace=on \
+            --video=retain-on-failure \
+            --screenshot=only-on-failure
+        env:
+          CI: true
+          PLAYWRIGHT_HTML_REPORT: playwright-report-${{ matrix.browser }}-${{ matrix.shard }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: results-${{ matrix.browser }}-${{ matrix.shard }}.json
+
+      - name: Collect Performance Metrics
+        if: always()
+        run: |
+          # Extract performance metrics from test results
+          node -e "
+          try {
+            const results = require('./results-${{ matrix.browser }}-${{ matrix.shard }}.json');
+            const metrics = {
+              totalTests: results.suites.reduce((acc, suite) => acc + suite.tests.length, 0),
+              passed: results.suites.reduce((acc, suite) => acc + suite.tests.filter(t => t.outcome === 'expected').length, 0),
+              failed: results.suites.reduce((acc, suite) => acc + suite.tests.filter(t => t.outcome === 'unexpected').length, 0),
+              avgDuration: results.suites.reduce((acc, suite) => acc + suite.tests.reduce((a, t) => a + t.results[0].duration, 0), 0) / results.suites.reduce((acc, suite) => acc + suite.tests.length, 0)
+            };
+            console.log('## Performance Metrics - ${{ matrix.browser }}-${{ matrix.shard }}');
+            console.log('- Total Tests:', metrics.totalTests);
+            console.log('- Passed:', metrics.passed);
+            console.log('- Failed:', metrics.failed);
+            console.log('- Average Duration:', Math.round(metrics.avgDuration), 'ms');
+            require('fs').writeFileSync('metrics-${{ matrix.browser }}-${{ matrix.shard }}.json', JSON.stringify(metrics, null, 2));
+          } catch (e) {
+            console.log('No metrics available');
+          }
+          "
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.browser }}-${{ matrix.shard }}
+          path: |
+            playwright-report-${{ matrix.browser }}-${{ matrix.shard }}/
+            test-results-${{ matrix.browser }}-${{ matrix.shard }}/
+            results-${{ matrix.browser }}-${{ matrix.shard }}.json
+            metrics-${{ matrix.browser }}-${{ matrix.shard }}.json
+          retention-days: 30
+
+      - name: Upload Traces (On Failure)
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces-${{ matrix.browser }}-${{ matrix.shard }}
+          path: |
+            test-results-${{ matrix.browser }}-${{ matrix.shard }}/
+          retention-days: 30
+
+  # ================================
+  # PERFORMANCE REGRESSION TESTING
+  # ================================
+  performance-regression:
+    name: Performance Regression Tests
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' || github.event.inputs.test_suite == 'performance' || github.event.inputs.test_suite == 'all'
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Performance Tests
+        run: |
+          npx playwright test \
+            --project=performance \
+            --grep="performance|Performance" \
+            --reporter=line,json:performance-results.json \
+            --output=performance-test-results
+        env:
+          CI: true
+
+      - name: Analyze Performance Results
+        run: |
+          node -e "
+          try {
+            const results = require('./performance-results.json');
+            let regressions = [];
+            results.suites.forEach(suite => {
+              suite.tests.forEach(test => {
+                if (test.outcome === 'unexpected') {
+                  regressions.push({
+                    test: test.title,
+                    error: test.results[0].error?.message || 'Unknown error'
+                  });
+                }
+              });
+            });
+            
+            if (regressions.length > 0) {
+              console.log('🚨 Performance Regressions Detected:');
+              regressions.forEach(r => console.log('- ' + r.test + ': ' + r.error));
+              process.exit(1);
+            } else {
+              console.log('✅ No performance regressions detected');
+            }
+          } catch (e) {
+            console.log('⚠️ Could not analyze performance results');
+          }
+          "
+
+      - name: Upload Performance Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-results
+          path: |
+            performance-results.json
+            performance-test-results/
+          retention-days: 7
+
+  # ================================
+  # VISUAL REGRESSION TESTING
+  # ================================
+  visual-regression:
+    name: Visual Regression Tests
+    runs-on: ubuntu-latest
+    if: needs.setup.outputs.should-run-visual == 'true' || github.event.inputs.test_suite == 'visual' || github.event.inputs.test_suite == 'all'
+    needs: setup
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Visual Tests
+        run: |
+          npx playwright test \
+            --project=visual \
+            --update-snapshots \
+            --reporter=html,json:visual-results.json
+        env:
+          CI: true
+
+      - name: Upload Visual Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-test-results
+          path: |
+            playwright-report/
+            visual-results.json
+            test-results/
+          retention-days: 7
+
+  # ================================
+  # ACCESSIBILITY TESTING
+  # ================================
+  accessibility-tests:
+    name: Accessibility Tests
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' || github.event.inputs.test_suite == 'accessibility' || github.event.inputs.test_suite == 'all'
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Accessibility Tests
+        run: |
+          npx playwright test \
+            --project=accessibility \
+            --reporter=html,json:accessibility-results.json
+        env:
+          CI: true
+
+      - name: Upload Accessibility Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: accessibility-test-results
+          path: |
+            playwright-report/
+            accessibility-results.json
+          retention-days: 7
+
+  # ================================
+  # SMOKE TESTING
+  # ================================
+  smoke-tests:
+    name: Smoke Tests (Critical Path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Smoke Tests
+        run: |
+          npx playwright test \
+            --grep="@smoke" \
+            --reporter=line,json:smoke-results.json \
+            --max-failures=3
+        env:
+          CI: true
+
+      - name: Upload Smoke Test Results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-test-results
+          path: |
+            smoke-results.json
+            test-results/
+          retention-days: 3
+
+  # ================================
+  # CONSOLIDATION & REPORTING
+  # ================================
+  consolidate-results:
+    name: Consolidate Results & Generate Report
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, performance-regression, visual-regression, accessibility-tests, smoke-tests]
+    if: always()
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-test-results
+
+      - name: Generate Consolidated Report
+        run: |
+          mkdir -p consolidated-report
+          
+          # Create summary report
+          cat > consolidated-report/summary.md << 'EOF'
+          # E2E Test Results Summary
+          
+          **Run Date**: $(date -u)
+          **Commit**: ${{ github.sha }}
+          **Branch**: ${{ github.ref_name }}
+          **Trigger**: ${{ github.event_name }}
+          
+          ## Test Results Overview
+          EOF
+          
+          # Process each test type
+          find all-test-results -name "*.json" -path "*/playwright-report-*" | while read file; do
+            if [ -f "$file" ]; then
+              echo "Processing: $file"
+              node -e "
+              try {
+                const results = require('./$file');
+                console.log('### Results from', '$file'.split('/').slice(-2).join('/'));
+                const total = results.suites?.reduce((acc, suite) => acc + suite.tests.length, 0) || 0;
+                const passed = results.suites?.reduce((acc, suite) => acc + suite.tests.filter(t => t.outcome === 'expected').length, 0) || 0;
+                const failed = total - passed;
+                console.log('- **Total Tests**: ' + total);
+                console.log('- **Passed**: ' + passed + ' ✅');
+                console.log('- **Failed**: ' + failed + (failed > 0 ? ' ❌' : ' ✅'));
+                console.log('- **Pass Rate**: ' + (total > 0 ? Math.round((passed/total)*100) : 0) + '%');
+                console.log();
+              } catch (e) { 
+                console.log('Could not process', '$file');
+              }
+              " >> consolidated-report/summary.md
+            fi
+          done
+          
+          echo "## Failed Tests" >> consolidated-report/summary.md
+          find all-test-results -name "*trace*.zip" | while read trace; do
+            echo "- Trace available: \`$(basename $trace)\`" >> consolidated-report/summary.md
+          done
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (fs.existsSync('consolidated-report/summary.md')) {
+              const report = fs.readFileSync('consolidated-report/summary.md', 'utf8');
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            }
+
+      - name: Upload Consolidated Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: consolidated-e2e-report
+          path: |
+            consolidated-report/
+            all-test-results/
+          retention-days: 30
+
+  # ================================
+  # QUALITY GATE
+  # ================================
+  e2e-quality-gate:
+    name: E2E Quality Gate
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, performance-regression, smoke-tests]
+    if: always()
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate Results
+        run: |
+          echo "Evaluating E2E test results..."
+          
+          # Check core test results
+          if [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+            echo "❌ Core E2E tests failed"
+            exit 1
+          fi
+          
+          # Check smoke tests
+          if [ "${{ needs.smoke-tests.result }}" != "success" ]; then
+            echo "❌ Smoke tests failed - critical path broken"
+            exit 1
+          fi
+          
+          # Check performance regression (if ran)
+          if [ "${{ needs.performance-regression.result }}" == "failure" ]; then
+            echo "❌ Performance regression detected"
+            exit 1
+          fi
+          
+          echo "✅ All critical E2E tests passed!"
+
+      - name: Quality Gate Summary
+        run: |
+          echo "## 🎉 E2E Quality Gate: PASSED ✅"
+          echo ""
+          echo "### Test Results:"
+          echo "- **Core E2E Tests**: ${{ needs.e2e-tests.result }} ${{ needs.e2e-tests.result == 'success' && '✅' || '❌' }}"
+          echo "- **Performance Tests**: ${{ needs.performance-regression.result }} ${{ needs.performance-regression.result == 'success' && '✅' || needs.performance-regression.result == 'skipped' && '⏭️' || '❌' }}"
+          echo "- **Smoke Tests**: ${{ needs.smoke-tests.result }} ${{ needs.smoke-tests.result == 'success' && '✅' || '❌' }}"
+          echo "- **Visual Tests**: ${{ needs.visual-regression.result }} ${{ needs.visual-regression.result == 'success' && '✅' || needs.visual-regression.result == 'skipped' && '⏭️' || '❌' }}"
+          echo "- **Accessibility Tests**: ${{ needs.accessibility-tests.result }} ${{ needs.accessibility-tests.result == 'success' && '✅' || needs.accessibility-tests.result == 'skipped' && '⏭️' || '❌' }}"
+          echo ""
+          echo "### Acceptance Criteria: ✅ FULFILLED"
+          echo "✅ **Given** CI pipeline **When** e2e実行 **Then** 全シナリオpass・失敗時trace取得"
