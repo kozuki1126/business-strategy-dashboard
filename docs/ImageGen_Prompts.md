@@ -2,10 +2,10 @@
 ---
 title: 画像生成プロンプト集（経営戦略ダッシュボード）
 version: 0.2.0
-date: 2025-08-25
+date: 2025-08-26
 owner: Development Team
 reviewers: Claude Assistant
-status: Active - GA(Internal) Phase
+status: Active - PostGA Phase
 tags: [mock, hero, dashboard, OG, business, ui-design, brand-guide]
 github_url: https://github.com/kozuki1126/business-strategy-dashboard
 progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/main/docs/DEVELOPMENT_PROGRESS.md
@@ -145,7 +145,7 @@ Style: 一般的ビジネス、ミニマル、品質感重視
 Palette: ブルー/スレート/ホワイト
 Aspect: 16:9
 Text: 見出し="意思決定を加速する" / サブ="外部指標×売上を1つに・エンタープライズ級品質" / CTA="ログイン"
-SaveTo: assets/mockups/20250825\_hero\_enterprise\_v001.png
+SaveTo: assets/mockups/20250826\_hero\_enterprise\_v001.png
 
 ```
 
@@ -159,7 +159,7 @@ Layout: 左ナビ＋2–3カラムグリッド、検索/フィルタ上部、RBA
 Features: パフォーマンス監視表示、SLO達成状況、リアルタイム更新インジケーター
 Aspect: 1920x1080
 Palette: #0EA5E9,#0F172A,#F8FAFC
-SaveTo: assets/mockups/20250825\_dashboard\_full\_features\_v001.png
+SaveTo: assets/mockups/20250826\_dashboard\_full\_features\_v001.png
 
 ```
 
@@ -172,7 +172,7 @@ Features: RBAC権限表示、店舗アクセス制御UI、監査ログ記録表�
 Fields: 必須項目表示、税抜計算UI、客単価自動算出表示
 Aspect: 1920x1080
 Palette: #0EA5E9,#0F172A,#F8FAFC
-SaveTo: assets/mockups/20250825\_sales\_form\_rbac\_compare.png
+SaveTo: assets/mockups/20250826\_sales\_form\_rbac\_compare.png
 
 ```
 
@@ -185,7 +185,7 @@ Charts: 時系列パフォーマンス、曜日×天候相関、応答時間分�
 Layout: メトリクス・ダッシュボード、リアルタイム監視、アラート設定UI
 Palette: #0EA5E9,#0F172A,#F8FAFC
 Aspect: 1920x1080
-SaveTo: assets/mockups/20250825\_performance\_analytics\_slo.png
+SaveTo: assets/mockups/20250826\_performance\_analytics\_slo.png
 
 ```
 
@@ -210,6 +210,7 @@ SaveTo: assets/mockups/20250825\_performance\_analytics\_slo.png
 - **パフォーマンス**: SLO達成・99.7%可用性・P95≤1350ms（Task #014完了）
 - **E2Eテスト**: 包括的テストスイート・CI統合（Task #015完了）
 - **認証**: メールマジックリンク・セッション管理（Task #005完了）
+- **ドキュメント**: 完全文書化・相互参照・整合性確保（Task #016完了）
 
 # 相互参照・関連ドキュメント
 
@@ -223,5 +224,5 @@ SaveTo: assets/mockups/20250825\_performance\_analytics\_slo.png
 ---
 
 **画像生成品質**: Enterprise Ready・WCAG AA準拠・ブランド統一・高品質モックアップ  
-**プロジェクト進捗率**: 83% (15/18タスク完了) → 現在: GA(Internal)文書・デザイン整備フェーズ進行中  
-**最終更新**: 2025-08-25 - Task #016 ドキュメント整備実装（Claude Assistant）
+**プロジェクト進捗率**: 94% (16/17タスク完了) → 現在: PostGA UIデザイン・画像生成整備フェーズ進行準備完了  
+**最終更新**: 2025-08-26 - Task #016 ドキュメント整備実装完了（Claude Assistant）
