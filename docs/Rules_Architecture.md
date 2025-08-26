@@ -2,7 +2,7 @@
 ---
 title: Rules & Architecture（経営戦略ダッシュボード）
 version: 0.2.0
-date: 2025-08-25
+date: 2025-08-26
 owner: Development Team
 reviewers: Claude Assistant
 status: Active - Production Ready
@@ -142,7 +142,7 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 # MCP/ツールガイド（運用実績）
 
 | ツール | 主用途 | 権限/注意 | 実装実績 |
-|---|---|---|---|
+|---|---|---|------|
 | **github** | issue/branch/PR/commit/コメント、ドラフトPR起票 | `main`保護、Secrets使用、破壊操作禁止 | ✅ 18タスク・85コミット・CI/CD統合 |
 | **filesystem** | `docs/`, `e2e/`, `assets/mockups/` 生成・更新 | ルート削除不可、LFS推奨（画像） | ✅ 文書管理・テスト・アセット |
 | **playwright-mcp** | `e2e/` 実行（trace/screenshot） | 高頻度実行禁止 | ✅ 包括的E2Eテスト・CI統合 |
@@ -223,4 +223,4 @@ progress_url: https://github.com/kozuki1126/business-strategy-dashboard/blob/mai
 
 **アーキテクチャ品質**: Enterprise Ready・Production Grade・SLO達成・包括的テスト完了  
 **プロジェクト進捗率**: 83% (15/18タスク完了) → 現在: GA(Internal)文書・デザイン整備フェーズ進行中  
-**最終更新**: 2025-08-25 - Task #016 ドキュメント整備実装（Claude Assistant）
+**最終更新**: 2025-08-26 - Task #016 ドキュメント整備実装継続（Claude Assistant）
