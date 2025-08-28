@@ -1,54 +1,73 @@
-/**
- * useAuditSecurity - Temporary dummy hook for audit security analysis
- * TODO: Implement proper security analysis logic
- */
+import { useState, useEffect } from 'react';
 
-import { useState } from 'react';
-
-interface SecurityFinding {
+export interface AuditSecurityFinding {
   id: string;
-  type: 'high' | 'medium' | 'low';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  category: string;
+  title: string;
   description: string;
-  count: number;
-  details?: string[];
+  recommendation: string;
+  affected_users?: number;
+  risk_score: number;
+  detected_at: string;
 }
 
-interface UseAuditSecurityReturn {
-  findings: SecurityFinding[];
+export interface AuditSecuritySummary {
+  total_findings: number;
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+  risk_score: number;
+  last_scan: string;
+}
+
+export interface UseAuditSecurityReturn {
+  findings: AuditSecurityFinding[];
+  summary: AuditSecuritySummary | null;
   isLoading: boolean;
   error: string | null;
-  riskScore: number;
-  summary: {
-    totalFindings: number;
-    highRisk: number;
-    mediumRisk: number;
-    lowRisk: number;
-  };
+  refresh: () => void;
 }
 
 /**
- * Temporary dummy hook for audit security functionality
- * Returns empty state to prevent TypeScript errors
+ * TEMPORARY DUMMY IMPLEMENTATION
+ * TODO: Replace with actual audit security logic
  */
 export const useAuditSecurity = (): UseAuditSecurityReturn => {
-  const [isLoading] = useState(false);
-  const [error] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data for development
-  const findings: SecurityFinding[] = [];
-  
-  const summary = {
-    totalFindings: 0,
-    highRisk: 0,
-    mediumRisk: 0,
-    lowRisk: 0,
+  const findings: AuditSecurityFinding[] = [];
+  const summary: AuditSecuritySummary = {
+    total_findings: 0,
+    critical_count: 0,
+    high_count: 0,
+    medium_count: 0,
+    low_count: 0,
+    risk_score: 0,
+    last_scan: new Date().toISOString()
   };
+
+  const refresh = () => {
+    setIsLoading(true);
+    // Simulate API call
+    setTimeout(() => {
+      setIsLoading(false);
+      setError(null);
+    }, 500);
+  };
+
+  useEffect(() => {
+    // Initial load simulation
+    setIsLoading(false);
+  }, []);
 
   return {
     findings,
+    summary,
     isLoading,
     error,
-    riskScore: 0,
-    summary,
+    refresh
   };
 };
