@@ -122,9 +122,26 @@ npm install
 
 3. **環境変数設定**
 ```bash
-cp .env.local.example .env.local
-# Supabase URL・APIキー・Resend APIキー等を設定
+cp .env.example .env.local
 ```
+
+**環境変数の設定内容：**
+
+| 変数名 | 説明 | 取得方法 |
+|--------|------|----------|
+| `NEXT_PUBLIC_SUPABASE_URL` | SupabaseプロジェクトURL | [Supabase Dashboard](https://supabase.com/dashboard) > プロジェクト設定 > API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase匿名キー | 同上 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabaseサービスロールキー | 同上（管理者権限用） |
+| `DATABASE_URL` | PostgreSQL接続URL | Supabase > 設定 > データベース |
+| `RESEND_API_KEY` | メール送信APIキー | [Resend](https://resend.com/api-keys)でアカウント作成後取得 |
+| `RESEND_FROM_EMAIL` | 送信元メールアドレス | Resendで認証済みドメインのメール |
+| `EMAIL_RECIPIENTS_ADMIN` | 管理者通知先 | カンマ区切りで複数指定可能 |
+
+**⚠️ セキュリティ注意事項:**
+- `.env.local`は絶対にGitにコミットしないでください
+- 本番環境では`.env.production`を使用し、強固なパスワードを設定
+- API キーは定期的にローテーションしてください
+- Vercelデプロイ時は環境変数をVercelダッシュボードで設定
 
 4. **データベースセットアップ**
 ```bash
@@ -409,4 +426,4 @@ MIT License
 **🎯 Current Status**: GA(Internal) フェーズ進行中・文書整備・UIモックアップ・ブランドガイド  
 **🎉 Achievement**: Enterprise Ready・Production Grade・SLO達成・包括的テスト完了  
 **📈 Progress**: **83%** (15/18タスク完了) → エンタープライズ級システム実現済み  
-**🔄 Last Updated**: 2025-08-25 - Task #016 ドキュメント整備実装（Claude Assistant）
+**🔄 Last Updated**: 2025-08-28 - セキュリティ強化・環境変数設定修正（Claude Assistant）
